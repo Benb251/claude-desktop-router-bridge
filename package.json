@@ -1,0 +1,21 @@
+{
+  "name": "claude-desktop-router-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Thin local bridge controller for Claude Desktop x 9router.",
+  "keywords": [
+    "claude-desktop",
+    "9router",
+    "model-routing",
+    "local-bridge",
+    "claude-code",
+    "operations-console"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "smoke": "node scripts/smoke.mjs"
+  }
+}

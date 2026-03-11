@@ -1,0 +1,14 @@
+node_modules/
+.codex-tmp/
+
+*.log
+npm-debug.log*
+
+.DS_Store
+Thumbs.db
+
+coverage/
+dist/
+
+*.bak
+*.tmp

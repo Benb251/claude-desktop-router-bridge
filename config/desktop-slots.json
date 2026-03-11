@@ -1,0 +1,29 @@
+{
+  "slots": [
+    {
+      "id": "claude-sonnet-4-6",
+      "label": "Claude Sonnet 4.6",
+      "hint": "Default Claude Code working slot in desktop app."
+    },
+    {
+      "id": "claude-opus-4-6",
+      "label": "Claude Opus 4.6",
+      "hint": "Higher-cost slot for heavier tasks."
+    },
+    {
+      "id": "claude-opus-4-6-thinking",
+      "label": "Claude Opus 4.6 Thinking",
+      "hint": "Thinking variant if desktop requests it."
+    },
+    {
+      "id": "claude-haiku-4-5",
+      "label": "Claude Haiku 4.5",
+      "hint": "Fast slot for lightweight tasks."
+    },
+    {
+      "id": "claude-haiku-4-5-20251001",
+      "label": "Claude Haiku 4.5 Dated",
+      "hint": "Explicit dated variant used by some routes."
+    }
+  ]
+}

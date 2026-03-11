@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Chrono Spirit Bridge Console</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="top-hero panel">
+        <div class="hero-copy">
+          <p class="eyebrow">Claude Desktop x 9router</p>
+          <h1>Bridge Console</h1>
+          <p class="lede">
+            Local routing console for remapping Claude Desktop slots into live 9router targets with a tighter, audit-friendly operations surface.
+          </p>
+          <p id="heroSummary" class="hero-summary">Loading system state...</p>
+        </div>
+
+        <div class="hero-actions">
+          <button id="exportProfileButton" class="ghost-button" type="button">Export profile</button>
+          <button id="importProfileButton" class="ghost-button" type="button">Import profile</button>
+          <button id="reloadButton" class="ghost-button" type="button">Reload state</button>
+          <button id="saveButton" class="primary-button" type="button">Apply mapping</button>
+        </div>
+
+        <div id="heroStatusRail" class="status-rail"></div>
+      </header>
+
+      <div class="workspace-grid">
+        <aside class="ops-rail">
+          <section id="systemHealth" class="panel ops-section"></section>
+
+          <section class="panel ops-section">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Filters</p>
+                <h2>Catalog Control</h2>
+              </div>
+            </div>
+
+            <label class="field">
+              <span>Search live catalog</span>
+              <input id="searchInput" type="text" placeholder="Search model id, root, or provider">
+            </label>
+
+            <div class="mode-toggle">
+              <button id="modeCodeFirst" class="segmented-button" type="button">Code-first</button>
+              <button id="modeShowAll" class="segmented-button" type="button">Show all</button>
+            </div>
+
+            <label class="field">
+              <span>Sort suggestions</span>
+              <select id="sortSelect">
+                <option value="provider">Provider</option>
+                <option value="recent">Recent</option>
+                <option value="recommended">Recommended</option>
+              </select>
+            </label>
+
+            <div class="field">
+              <span>Providers</span>
+              <div id="providerFilters" class="filter-chip-row"></div>
+            </div>
+          </section>
+
+          <section class="panel ops-section">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Quick Actions</p>
+                <h2>Presets</h2>
+              </div>
+            </div>
+            <div id="quickPresets" class="preset-list"></div>
+            <div class="profile-actions">
+              <button id="opsExportProfileButton" class="action-chip" type="button">Export current profile</button>
+              <button id="opsImportProfileButton" class="action-chip" type="button">Import profile JSON</button>
+            </div>
+          </section>
+
+          <section class="panel ops-section">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Profile Manager</p>
+                <h2>Named Profiles</h2>
+              </div>
+            </div>
+            <label class="field">
+              <span>Profile name</span>
+              <input id="profileNameInput" type="text" placeholder="Coding - GPT 5.3 Codex">
+            </label>
+            <div class="profile-actions">
+              <button id="saveProfileButton" class="action-chip" type="button">Save current draft</button>
+            </div>
+            <div id="profileQuickLoads" class="profile-actions"></div>
+            <div id="profileBulkActions" class="profile-actions"></div>
+            <div id="profileBulkSummary" class="helper"></div>
+            <div id="profileManagerList" class="profile-manager-list"></div>
+          </section>
+
+          <section class="panel ops-section">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Bridge Ops</p>
+                <h2>Analytics</h2>
+              </div>
+            </div>
+            <div id="analyticsGrid" class="analytics-grid"></div>
+            <div id="topTargets" class="top-targets"></div>
+          </section>
+
+          <section class="panel ops-section">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Memory</p>
+                <h2>Favorites & Recents</h2>
+              </div>
+            </div>
+            <div id="favoritesSection" class="stack-section"></div>
+            <div id="recentTargetsSection" class="stack-section"></div>
+          </section>
+
+          <section class="panel ops-section">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Activity</p>
+                <h2>Recent Changes</h2>
+              </div>
+            </div>
+            <div id="applyHistorySection" class="activity-list"></div>
+          </section>
+        </aside>
+
+        <main class="mapping-workspace">
+          <section id="workspaceHeader" class="panel workspace-header"></section>
+
+          <section id="degradedBanner" class="banner hidden">
+            Live catalog unavailable. Raw input mode still works. If Claude Desktop does not react immediately after apply, restart 9router manually.
+          </section>
+
+          <section id="slotList" class="slot-stack"></section>
+        </main>
+      </div>
+
+      <div id="stickyApplyBar" class="sticky-layer"></div>
+      <div id="profilePreviewModal" class="preview-layer hidden"></div>
+    </div>
+
+    <input id="profileFileInput" type="file" accept="application/json,.json" hidden>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
