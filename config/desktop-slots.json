@@ -3,27 +3,27 @@
     {
       "id": "claude-sonnet-4-6",
       "label": "Claude Sonnet 4.6",
-      "hint": "Default Claude Code working slot in desktop app."
+      "hint": "Slot làm việc mặc định của Claude Code trong ứng dụng desktop."
     },
     {
       "id": "claude-opus-4-6",
       "label": "Claude Opus 4.6",
-      "hint": "Higher-cost slot for heavier tasks."
+      "hint": "Slot chi phí cao hơn cho các tác vụ nặng."
     },
     {
       "id": "claude-opus-4-6-thinking",
       "label": "Claude Opus 4.6 Thinking",
-      "hint": "Thinking variant if desktop requests it."
+      "hint": "Biến thể Thinking nếu desktop yêu cầu."
     },
     {
       "id": "claude-haiku-4-5",
       "label": "Claude Haiku 4.5",
-      "hint": "Fast slot for lightweight tasks."
+      "hint": "Slot nhanh cho các tác vụ nhẹ."
     },
     {
       "id": "claude-haiku-4-5-20251001",
       "label": "Claude Haiku 4.5 Dated",
-      "hint": "Explicit dated variant used by some routes."
+      "hint": "Biến thể có ngày phát hành, được một số route sử dụng."
     }
   ]
 }

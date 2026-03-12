@@ -1,4 +1,5 @@
-const STORAGE_KEY = "chrono-spirit-ui-state-v2";
+const STORAGE_KEY = "chrono-spirit-ui-state-v3";
+const LEGACY_STORAGE_KEY = "chrono-spirit-ui-state-v2";
 const MAX_FAVORITES = 12;
 const MAX_RECENT_TARGETS = 8;
 const MAX_APPLY_HISTORY = 5;
@@ -9,31 +10,31 @@ const QUICK_PRESETS = [
   {
     id: "preset-sonnet-gpt54",
     title: "Sonnet -> cx/gpt-5.4",
-    description: "Route the main Sonnet slot to GPT-5.4 through cx.",
+    description: "Chuyển slot Sonnet chính sang GPT-5.4 qua cx.",
     mappings: { "claude-sonnet-4-6": "cx/gpt-5.4" }
   },
   {
     id: "preset-sonnet-codex-high",
     title: "Sonnet -> cx/gpt-5.3-codex-high",
-    description: "Bias the default coding slot toward Codex High.",
+    description: "Ưu tiên slot code mặc định về Codex High.",
     mappings: { "claude-sonnet-4-6": "cx/gpt-5.3-codex-high" }
   },
   {
     id: "preset-sonnet-claude",
     title: "Sonnet -> cc/claude-sonnet-4-6",
-    description: "Restore the Sonnet slot to the Claude-coded route.",
+    description: "Khôi phục slot Sonnet về route Claude gốc.",
     mappings: { "claude-sonnet-4-6": "cc/claude-sonnet-4-6" }
   },
   {
     id: "preset-opus-github",
     title: "Opus -> gh/claude-opus-4.6",
-    description: "Use the GitHub-hosted Opus route for the heavy slot.",
+    description: "Dùng route Opus do GitHub host cho slot nặng.",
     mappings: { "claude-opus-4-6": "gh/claude-opus-4.6" }
   },
   {
     id: "preset-restore-defaults",
-    title: "Restore all defaults",
-    description: "Stage every slot back to its default Claude route.",
+    title: "Khôi phục mọi mặc định",
+    description: "Đưa toàn bộ slot về route Claude mặc định.",
     mappings: "__defaults__"
   }
 ];
@@ -57,7 +58,12 @@ const state = {
     search: "",
     showAll: false,
     selectedProviders: [],
-    sortMode: "provider"
+    sortMode: "recommended",
+    selectedSlotId: "",
+    activeUtilityPanel: "profiles",
+    isUtilityDrawerOpen: false,
+    catalogLens: "recommended",
+    profileDraftName: ""
   },
   favorites: [],
   recentTargets: [],
@@ -67,6 +73,7 @@ const state = {
   profileFileImportMode: "single-mapping",
   pendingProfilePreview: null,
   pendingProfileSetImport: null,
+  pendingModelPicker: null,
   profileRename: null,
   lastApplyResult: null,
   saving: false,
@@ -74,38 +81,14 @@ const state = {
 };
 
 const els = {
-  heroSummary: document.getElementById("heroSummary"),
-  heroStatusRail: document.getElementById("heroStatusRail"),
-  systemHealth: document.getElementById("systemHealth"),
-  searchInput: document.getElementById("searchInput"),
-  modeCodeFirst: document.getElementById("modeCodeFirst"),
-  modeShowAll: document.getElementById("modeShowAll"),
-  sortSelect: document.getElementById("sortSelect"),
-  providerFilters: document.getElementById("providerFilters"),
-  quickPresets: document.getElementById("quickPresets"),
-  profileNameInput: document.getElementById("profileNameInput"),
-  saveProfileButton: document.getElementById("saveProfileButton"),
-  profileQuickLoads: document.getElementById("profileQuickLoads"),
-  profileBulkActions: document.getElementById("profileBulkActions"),
-  profileBulkSummary: document.getElementById("profileBulkSummary"),
-  profileManagerList: document.getElementById("profileManagerList"),
-  profilePreviewModal: document.getElementById("profilePreviewModal"),
-  analyticsGrid: document.getElementById("analyticsGrid"),
-  topTargets: document.getElementById("topTargets"),
-  favoritesSection: document.getElementById("favoritesSection"),
-  recentTargetsSection: document.getElementById("recentTargetsSection"),
-  applyHistorySection: document.getElementById("applyHistorySection"),
-  workspaceHeader: document.getElementById("workspaceHeader"),
-  degradedBanner: document.getElementById("degradedBanner"),
-  slotList: document.getElementById("slotList"),
-  stickyApplyBar: document.getElementById("stickyApplyBar"),
-  exportProfileButton: document.getElementById("exportProfileButton"),
-  importProfileButton: document.getElementById("importProfileButton"),
-  opsExportProfileButton: document.getElementById("opsExportProfileButton"),
-  opsImportProfileButton: document.getElementById("opsImportProfileButton"),
+  statusCanopy: document.getElementById("statusCanopy"),
+  slotNavigator: document.getElementById("slotNavigator"),
+  routeStudio: document.getElementById("routeStudio"),
+  catalogBrowser: document.getElementById("catalogBrowser"),
+  utilityDrawer: document.getElementById("utilityDrawer"),
+  applyDock: document.getElementById("applyDock"),
+  modalLayer: document.getElementById("modalLayer"),
   profileFileInput: document.getElementById("profileFileInput"),
-  reloadButton: document.getElementById("reloadButton"),
-  saveButton: document.getElementById("saveButton")
 };
 
 function escapeHtml(value) {
@@ -134,37 +117,124 @@ function highlightMatch(value, query) {
 
 function formatRelativeTime(value) {
   if (!value) {
-    return "n/a";
+    return "không có";
   }
 
   const timestamp = new Date(value).getTime();
   if (Number.isNaN(timestamp)) {
-    return "n/a";
+    return "không có";
   }
 
   const diffSeconds = Math.round((Date.now() - timestamp) / 1000);
   const absSeconds = Math.abs(diffSeconds);
   if (absSeconds < 10) {
-    return "just now";
+    return "vừa xong";
   }
   if (absSeconds < 60) {
-    return `${absSeconds}s ago`;
+    return `${absSeconds} giây trước`;
   }
 
   const diffMinutes = Math.round(diffSeconds / 60);
   const absMinutes = Math.abs(diffMinutes);
   if (absMinutes < 60) {
-    return `${absMinutes}m ago`;
+    return `${absMinutes} phút trước`;
   }
 
   const diffHours = Math.round(diffMinutes / 60);
   const absHours = Math.abs(diffHours);
   if (absHours < 24) {
-    return `${absHours}h ago`;
+    return `${absHours} giờ trước`;
   }
 
   const diffDays = Math.round(diffHours / 24);
-  return `${Math.abs(diffDays)}d ago`;
+  return `${Math.abs(diffDays)} ngày trước`;
+}
+
+function titleCaseStatus(value) {
+  const source = String(value || "idle");
+  if (source === "validation-error") {
+    return "Lệch xác thực";
+  }
+  if (source === "success") {
+    return "Đã áp dụng";
+  }
+  if (source === "error") {
+    return "Lỗi";
+  }
+  if (source === "idle") {
+    return "Chưa áp dụng";
+  }
+  return source.charAt(0).toUpperCase() + source.slice(1);
+}
+
+function truncateMiddle(value, maxLength = 44) {
+  const source = String(value || "");
+  if (source.length <= maxLength) {
+    return source;
+  }
+
+  const keep = Math.max(Math.floor((maxLength - 1) / 2), 6);
+  return `${source.slice(0, keep)}...${source.slice(-keep)}`;
+}
+
+function toneClass(tone) {
+  return tone ? ` tone-${tone}` : "";
+}
+
+function renderBadge(label, tone = "") {
+  return `<span class="badge${toneClass(tone)}">${escapeHtml(label)}</span>`;
+}
+
+function renderPill(label, tone = "") {
+  return `<span class="status-pill${toneClass(tone)}">${escapeHtml(label)}</span>`;
+}
+
+function getUtilityPanelLabel(panel) {
+  const labels = {
+    profiles: "Profile",
+    analytics: "Thống kê",
+    memory: "Ghi nhớ",
+    activity: "Hoạt động"
+  };
+  return labels[panel] || panel;
+}
+
+function getProfileSourceLabel(source) {
+  const labels = {
+    local: "cục bộ",
+    "local-clone": "bản sao cục bộ",
+    saved: "đã lưu",
+    system: "hệ thống",
+    "imported-set": "bộ đã nhập"
+  };
+  return labels[source] || source;
+}
+
+function getImportModeLabel(mode) {
+  const labels = {
+    merge: "gộp",
+    replace: "thay thế",
+    "skip-locked": "bỏ qua đã khóa"
+  };
+  return labels[mode] || mode;
+}
+
+function getProfileOperationLabel(type) {
+  const labels = {
+    create: "tạo mới",
+    update: "cập nhật",
+    "skip-locked": "bỏ qua đã khóa"
+  };
+  return labels[type] || type;
+}
+
+function formatProviderLabel(provider) {
+  const labels = {
+    custom: "tự nhập",
+    none: "chưa gán",
+    unknown: "không rõ"
+  };
+  return labels[provider] || provider;
 }
 
 function getDefaultRoute(slotId) {
@@ -222,10 +292,141 @@ function getRecentRank(modelId) {
   return state.recentTargets.findIndex((entry) => entry.modelId === modelId);
 }
 
+function normalizeUtilityPanel(panel) {
+  return ["profiles", "analytics", "memory", "activity"].includes(panel) ? panel : "profiles";
+}
+
+function chooseDefaultSlotId(preferredSlotId = "") {
+  if (preferredSlotId && getSlotById(preferredSlotId)) {
+    return preferredSlotId;
+  }
+
+  if (state.ui.selectedSlotId && getSlotById(state.ui.selectedSlotId)) {
+    return state.ui.selectedSlotId;
+  }
+
+  const firstDirty = getDirtySlots()[0];
+  if (firstDirty) {
+    return firstDirty.id;
+  }
+
+  const sonnet = getSlotById("claude-sonnet-4-6");
+  if (sonnet) {
+    return sonnet.id;
+  }
+
+  return state.slots[0]?.id || "";
+}
+
+function ensureSelectedSlot(preferredSlotId = "") {
+  state.ui.selectedSlotId = chooseDefaultSlotId(preferredSlotId);
+}
+
+function getSelectedSlot() {
+  return getSlotById(state.ui.selectedSlotId);
+}
+
+function selectSlot(slotId) {
+  if (!getSlotById(slotId)) {
+    return;
+  }
+
+  state.ui.selectedSlotId = slotId;
+  state.pendingModelPicker = null;
+  persistStoredState();
+  renderAll();
+}
+
+function openUtilityPanel(panel) {
+  state.ui.activeUtilityPanel = normalizeUtilityPanel(panel);
+  state.ui.isUtilityDrawerOpen = true;
+  persistStoredState();
+  renderAll();
+}
+
+function toggleUtilityPanel(panel) {
+  const normalized = normalizeUtilityPanel(panel);
+  if (state.ui.isUtilityDrawerOpen && state.ui.activeUtilityPanel === normalized) {
+    state.ui.isUtilityDrawerOpen = false;
+  } else {
+    state.ui.activeUtilityPanel = normalized;
+    state.ui.isUtilityDrawerOpen = true;
+  }
+  persistStoredState();
+  renderAll();
+}
+
+function closeUtilityDrawer() {
+  state.ui.isUtilityDrawerOpen = false;
+  renderAll();
+}
+
+function splitTarget(target) {
+  const value = String(target || "").trim();
+  if (!value) {
+    return { full: "", provider: "none", root: "Chưa gán" };
+  }
+
+  const parts = value.split("/");
+  if (parts.length === 1) {
+    return { full: value, provider: "custom", root: value };
+  }
+
+  return {
+    full: value,
+    provider: parts[0],
+    root: parts.slice(1).join("/")
+  };
+}
+
+function getCatalogModel(modelId) {
+  return state.catalog.models.find((model) => model.id === modelId) || null;
+}
+
+function getTargetMeta(target) {
+  const parts = splitTarget(target);
+  const catalogModel = getCatalogModel(parts.full);
+  if (catalogModel) {
+    return {
+      full: catalogModel.id,
+      provider: catalogModel.ownedBy,
+      root: catalogModel.root,
+      codeFirst: Boolean(catalogModel.isCodeFirst)
+    };
+  }
+
+  return {
+    full: parts.full,
+    provider: parts.provider || "custom",
+    root: parts.root || "Route nhập tay",
+    codeFirst: Boolean(parts.full)
+  };
+}
+
+function getCurrentOrFallbackModel(modelId) {
+  const existing = getCatalogModel(modelId);
+  if (existing) {
+    return existing;
+  }
+
+  const parts = splitTarget(modelId);
+  return {
+    id: parts.full || modelId,
+    root: parts.root || modelId || "Đích tùy chỉnh",
+    ownedBy: parts.provider || "custom",
+    isCodeFirst: true
+  };
+}
+
 function loadStoredState() {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
+    const currentRaw = window.localStorage.getItem(STORAGE_KEY);
+    if (currentRaw) {
+      return JSON.parse(currentRaw);
+    }
+
+    const legacyRaw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+    return legacyRaw ? JSON.parse(legacyRaw) : {};
   } catch {
     return {};
   }
@@ -240,7 +441,10 @@ function persistStoredState() {
     uiPrefs: {
       showAll: state.ui.showAll,
       selectedProviders: state.ui.selectedProviders,
-      sortMode: state.ui.sortMode
+      sortMode: state.ui.sortMode,
+      selectedSlotId: state.ui.selectedSlotId,
+      activeUtilityPanel: state.ui.activeUtilityPanel,
+      catalogLens: state.ui.catalogLens
     }
   };
 
@@ -255,7 +459,7 @@ function hydrateStoredState() {
   state.savedProfiles = Array.isArray(stored.savedProfiles)
     ? stored.savedProfiles.slice(0, MAX_SAVED_PROFILES).map((profile) => ({
       id: String(profile.id || `profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
-      name: String(profile.name || "Unnamed profile"),
+      name: String(profile.name || "Profile chưa đặt tên"),
       source: String(profile.source || "local"),
       savedAt: String(profile.savedAt || new Date().toISOString()),
       pinned: Boolean(profile.pinned),
@@ -265,7 +469,14 @@ function hydrateStoredState() {
     : [];
   state.ui.showAll = Boolean(stored.uiPrefs?.showAll);
   state.ui.selectedProviders = Array.isArray(stored.uiPrefs?.selectedProviders) ? stored.uiPrefs.selectedProviders : [];
-  state.ui.sortMode = stored.uiPrefs?.sortMode || "provider";
+  state.ui.sortMode = ["provider", "recent", "recommended"].includes(stored.uiPrefs?.sortMode)
+    ? stored.uiPrefs.sortMode
+    : "recommended";
+  state.ui.selectedSlotId = String(stored.uiPrefs?.selectedSlotId || "");
+  state.ui.activeUtilityPanel = normalizeUtilityPanel(String(stored.uiPrefs?.activeUtilityPanel || "profiles"));
+  state.ui.catalogLens = ["recommended", "all-matches"].includes(stored.uiPrefs?.catalogLens)
+    ? stored.uiPrefs.catalogLens
+    : "recommended";
 }
 
 function touchRecentTarget(modelId) {
@@ -335,9 +546,9 @@ function setTransientNotice({ status = "success", message, mismatchCount = 0 }) 
 function setSearchFromModel(modelId) {
   state.ui.search = String(modelId || "");
   state.ui.showAll = true;
-  if (els.searchInput) {
-    els.searchInput.value = state.ui.search;
-  }
+  state.ui.catalogLens = "all-matches";
+  state.ui.selectedProviders = [...getVisibleProviders()];
+  state.ui.isUtilityDrawerOpen = false;
   persistStoredState();
   renderAll();
 }
@@ -405,31 +616,7 @@ function sortModels(models) {
 
   if (state.ui.sortMode === "recommended") {
     ranked.sort((a, b) => {
-      const score = (model) => {
-        let total = 0;
-        if (model.isCodeFirst) {
-          total += 10;
-        }
-        if (isFavorite(model.id)) {
-          total += 6;
-        }
-        const recentRank = getRecentRank(model.id);
-        if (recentRank !== -1) {
-          total += Math.max(4 - recentRank, 1);
-        }
-        if (model.id.includes("gpt-5.4")) {
-          total += 3;
-        }
-        if (model.id.includes("codex")) {
-          total += 2;
-        }
-        if (model.id.includes("claude")) {
-          total += 1;
-        }
-        return total;
-      };
-
-      return score(b) - score(a) || a.ownedBy.localeCompare(b.ownedBy) || a.id.localeCompare(b.id);
+      return getRecommendationScore(b) - getRecommendationScore(a) || a.ownedBy.localeCompare(b.ownedBy) || a.id.localeCompare(b.id);
     });
     return ranked;
   }
@@ -438,44 +625,148 @@ function sortModels(models) {
   return ranked;
 }
 
+function getRecommendationScore(model) {
+  let total = 0;
+  if (model.isCodeFirst) {
+    total += 10;
+  }
+  if (isFavorite(model.id)) {
+    total += 6;
+  }
+  const recentRank = getRecentRank(model.id);
+  if (recentRank !== -1) {
+    total += Math.max(4 - recentRank, 1);
+  }
+  if (model.id.includes("gpt-5.4")) {
+    total += 3;
+  }
+  if (model.id.includes("codex")) {
+    total += 2;
+  }
+  if (model.id.includes("claude")) {
+    total += 1;
+  }
+  return total;
+}
+
+function getRecommendedModels(models) {
+  return [...models].sort((a, b) => {
+    return getRecommendationScore(b) - getRecommendationScore(a)
+      || a.ownedBy.localeCompare(b.ownedBy)
+      || a.id.localeCompare(b.id);
+  });
+}
+
 function getFilteredModels() {
   return sortModels(state.catalog.models.filter(modelMatchesFilters));
 }
 
-function getSuggestionGroups(currentValue) {
+function getCatalogGroupsForSlot(slotId) {
+  if (!state.catalog.ok || state.rawMode[slotId]) {
+    return [];
+  }
+
+  const currentValue = getDraftAlias(slotId);
+  const filtered = getFilteredModels();
+  const groups = [];
+  const seen = new Set();
+
+  const addGroup = (key, label, models, description = "") => {
+    const unique = models.filter((model) => model && !seen.has(model.id));
+    if (unique.length === 0) {
+      return;
+    }
+    unique.forEach((model) => seen.add(model.id));
+    groups.push({ key, label, description, models: unique });
+  };
+
+  if (currentValue && !filtered.some((model) => model.id === currentValue)) {
+    addGroup(
+      "current-target",
+      "Đích hiện tại",
+      [getCurrentOrFallbackModel(currentValue)],
+      "Được ghim vì route hiện tại nằm ngoài bộ lọc đang áp dụng."
+    );
+  }
+
+  if (state.ui.catalogLens === "recommended") {
+    const favorites = getRecommendedModels(filtered.filter((model) => isFavorite(model.id)));
+    addGroup("favorites", "Yêu thích", favorites.slice(0, 6), "Các route đã lưu cục bộ.");
+
+    const recentModels = filtered
+      .filter((model) => getRecentRank(model.id) !== -1)
+      .sort((a, b) => getRecentRank(a.id) - getRecentRank(b.id));
+    addGroup("recent", "Route gần đây", recentModels.slice(0, 6), "Các đích vừa dùng trong bản nháp hoặc lần áp dụng gần đây.");
+
+    const recommended = getRecommendedModels(filtered.filter((model) => !seen.has(model.id)));
+    addGroup(
+      "recommended",
+      "Đề xuất",
+      recommended.slice(0, 12),
+      state.ui.showAll ? "Các kết quả phù hợp nhất trong toàn bộ danh mục đã lọc." : "Đang ưu tiên các model thiên về code."
+    );
+  } else {
+    const favorites = sortModels(filtered.filter((model) => isFavorite(model.id)));
+    addGroup("favorites", "Yêu thích", favorites, "Các route đã ghim được đưa lên trước nhóm provider.");
+
+    const byProvider = new Map();
+    for (const model of filtered) {
+      if (seen.has(model.id)) {
+        continue;
+      }
+      if (!byProvider.has(model.ownedBy)) {
+        byProvider.set(model.ownedBy, []);
+      }
+      byProvider.get(model.ownedBy).push(model);
+    }
+
+    for (const [provider, models] of [...byProvider.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      addGroup(provider, provider, sortModels(models), `${models.length} đích trong nhóm provider này.`);
+    }
+  }
+
+  return groups;
+}
+
+function getModelPickerGroups(slotId) {
   if (!state.catalog.ok) {
     return [];
   }
 
+  const currentValue = getDraftAlias(slotId);
   const filtered = getFilteredModels();
   const groups = [];
+  const seen = new Set();
 
-  const favorites = filtered.filter((model) => isFavorite(model.id));
-  if (favorites.length > 0) {
-    groups.push({ key: "favorites", label: "Favorites", models: favorites });
+  if (currentValue && !filtered.some((model) => model.id === currentValue)) {
+    const currentModel = getCurrentOrFallbackModel(currentValue);
+    seen.add(currentModel.id);
+    groups.push({
+      key: "current-target",
+      label: "Đang dùng",
+      description: "Giữ sẵn model hiện tại ngay cả khi nó nằm ngoài bộ lọc đang bật.",
+      models: [currentModel]
+    });
   }
 
   const byProvider = new Map();
   for (const model of filtered) {
+    if (seen.has(model.id)) {
+      continue;
+    }
     if (!byProvider.has(model.ownedBy)) {
       byProvider.set(model.ownedBy, []);
     }
     byProvider.get(model.ownedBy).push(model);
   }
 
-  for (const [provider, models] of byProvider.entries()) {
-    groups.push({ key: provider, label: provider, models });
-  }
-
-  if (currentValue && !filtered.some((model) => model.id === currentValue)) {
-    const existing = state.catalog.models.find((model) => model.id === currentValue);
-    const fallbackModel = existing || {
-      id: currentValue,
-      root: currentValue.includes("/") ? currentValue.split("/").slice(1).join("/") : currentValue,
-      ownedBy: currentValue.includes("/") ? currentValue.split("/")[0] : "custom",
-      isCodeFirst: true
-    };
-    groups.unshift({ key: "current-target", label: "Current target", models: [fallbackModel] });
+  for (const [provider, models] of [...byProvider.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    groups.push({
+      key: provider,
+      label: formatProviderLabel(provider),
+      description: `${models.length} model phù hợp trong nhóm này.`,
+      models: sortModels(models)
+    });
   }
 
   return groups;
@@ -500,15 +791,15 @@ function getTopTargets() {
 function getSlotStatus(slotId) {
   const mismatch = state.lastApplyResult?.mismatches?.some((entry) => entry.slotId === slotId);
   if (mismatch) {
-    return { className: "state-error", badgeTone: "error", label: "Mismatch" };
+    return { className: "state-error", badgeTone: "error", label: "Lệch" };
   }
   if (isDirty(slotId)) {
-    return { className: "state-dirty", badgeTone: "pending", label: "Unsaved" };
+    return { className: "state-dirty", badgeTone: "pending", label: "Chưa lưu" };
   }
   if (getDraftAlias(slotId) === getDefaultRoute(slotId)) {
-    return { className: "state-default", badgeTone: "ok", label: "Default" };
+    return { className: "state-default", badgeTone: "ok", label: "Mặc định" };
   }
-  return { className: "state-custom", badgeTone: "", label: "Custom" };
+  return { className: "state-custom", badgeTone: "", label: "Tùy chỉnh" };
 }
 
 function getVisibleDirtySlotLabels() {
@@ -550,7 +841,7 @@ function downloadProfilePayload(payload, fallbackName = "profile") {
 function buildNamedProfile(name, source = "local") {
   const trimmedName = String(name || "").trim();
   if (!trimmedName) {
-    throw new Error("Profile name cannot be empty.");
+    throw new Error("Tên profile không được để trống.");
   }
 
   return {
@@ -619,7 +910,7 @@ function buildProfileDiffRows(mappings) {
       rows.push({
         slotId: slot.id,
         slotLabel: slot.label,
-        from: currentValue || "(empty)",
+        from: currentValue || "(trống)",
         to: nextValue
       });
     }
@@ -659,6 +950,7 @@ function buildProfileStats(mappings) {
 
 function openProfilePreview({ profileName, mappings, sourceType = "saved", sourceId = "" }) {
   const diffRows = buildProfileDiffRows(mappings);
+  state.pendingModelPicker = null;
   state.pendingProfileSetImport = null;
   state.pendingProfilePreview = {
     profileName,
@@ -673,6 +965,53 @@ function closeProfilePreview() {
   state.pendingProfilePreview = null;
 }
 
+function openModelPicker(slotId, { seedFromCurrent = false } = {}) {
+  if (!getSlotById(slotId)) {
+    return;
+  }
+
+  if (seedFromCurrent) {
+    state.ui.search = getDraftAlias(slotId);
+    state.ui.showAll = true;
+    state.ui.catalogLens = "all-matches";
+    state.ui.selectedProviders = [...getVisibleProviders()];
+  }
+
+  state.pendingProfilePreview = null;
+  state.pendingProfileSetImport = null;
+  state.pendingModelPicker = { slotId };
+  renderAll();
+  window.requestAnimationFrame(() => {
+    const input = document.getElementById("modelPickerSearchInput");
+    if (input) {
+      input.focus();
+      if (typeof input.select === "function") {
+        input.select();
+      }
+    }
+  });
+}
+
+function closeModelPicker() {
+  state.pendingModelPicker = null;
+}
+
+function renderModelPickerChip(slotId, model, currentValue) {
+  const active = model.id === currentValue;
+  return `
+    <button
+      class="model-picker-chip${active ? " active" : ""}"
+      type="button"
+      data-action="pick-model"
+      data-slot-id="${escapeHtml(slotId)}"
+      data-model-id="${escapeHtml(model.id)}"
+      title="${escapeHtml(model.id)}"
+    >
+      ${highlightMatch(model.root || model.id, state.ui.search)}
+    </button>
+  `;
+}
+
 function confirmProfilePreview() {
   if (!state.pendingProfilePreview) {
     return;
@@ -681,7 +1020,7 @@ function confirmProfilePreview() {
   const appliedCount = applyMappingsToDraft(state.pendingProfilePreview.mappings || {});
   const profileName = state.pendingProfilePreview.profileName || "profile";
   closeProfilePreview();
-  setTransientNotice({ status: "success", message: `Loaded profile "${profileName}" into draft (${appliedCount} slots).` });
+  setTransientNotice({ status: "success", message: `Đã nạp profile "${profileName}" vào bản nháp (${appliedCount} slot).` });
   renderAll();
 }
 
@@ -737,29 +1076,29 @@ function applyMappingsToDraft(mappings) {
 
 function saveCurrentProfile() {
   try {
-    const name = String(els.profileNameInput.value || "").trim();
+    const name = String(state.ui.profileDraftName || "").trim();
     const existing = state.savedProfiles.find((entry) => entry.name.toLowerCase() === name.toLowerCase());
     if (existing) {
       if (existing.locked) {
-        setTransientNotice({ status: "error", message: `Profile "${existing.name}" is locked. Unlock it before updating.` });
+        setTransientNotice({ status: "error", message: `Profile "${existing.name}" đang bị khóa. Hãy mở khóa trước khi cập nhật.` });
         renderAll();
         return;
       }
       existing.savedAt = new Date().toISOString();
       existing.mappings = Object.fromEntries(state.slots.map((slot) => [slot.id, getDraftAlias(slot.id)]));
       persistStoredState();
-      setTransientNotice({ status: "success", message: `Updated profile "${existing.name}".` });
-      els.profileNameInput.value = "";
+      setTransientNotice({ status: "success", message: `Đã cập nhật profile "${existing.name}".` });
+      state.ui.profileDraftName = "";
       renderAll();
       return;
     }
 
     const profile = buildNamedProfile(name, "local");
     upsertSavedProfile(profile);
-    els.profileNameInput.value = "";
-    setTransientNotice({ status: "success", message: `Saved profile "${profile.name}".` });
+    state.ui.profileDraftName = "";
+    setTransientNotice({ status: "success", message: `Đã lưu profile "${profile.name}".` });
   } catch (error) {
-    setTransientNotice({ status: "error", message: error.message || "Failed to save profile." });
+    setTransientNotice({ status: "error", message: error.message || "Không thể lưu profile." });
   }
   renderAll();
 }
@@ -767,7 +1106,7 @@ function saveCurrentProfile() {
 function loadSavedProfile(profileId) {
   const profile = getSavedProfileById(profileId);
   if (!profile) {
-    setTransientNotice({ status: "error", message: "Saved profile not found." });
+    setTransientNotice({ status: "error", message: "Không tìm thấy profile đã lưu." });
     renderAll();
     return;
   }
@@ -784,13 +1123,13 @@ function loadSavedProfile(profileId) {
 function startRenameSavedProfile(profileId) {
   const profile = getSavedProfileById(profileId);
   if (!profile) {
-    setTransientNotice({ status: "error", message: "Saved profile not found." });
+    setTransientNotice({ status: "error", message: "Không tìm thấy profile đã lưu." });
     renderAll();
     return;
   }
 
   if (profile.locked) {
-    setTransientNotice({ status: "error", message: `Profile "${profile.name}" is locked and cannot be renamed.` });
+    setTransientNotice({ status: "error", message: `Profile "${profile.name}" đang bị khóa và không thể đổi tên.` });
     renderAll();
     return;
   }
@@ -810,27 +1149,27 @@ function cancelRenameSavedProfile() {
 function commitRenameSavedProfile(profileId, nextName) {
   const trimmedName = String(nextName || "").trim();
   if (!trimmedName) {
-    setTransientNotice({ status: "error", message: "Profile name cannot be empty." });
+    setTransientNotice({ status: "error", message: "Tên profile không được để trống." });
     renderAll();
     return;
   }
 
   const profile = getSavedProfileById(profileId);
   if (!profile) {
-    setTransientNotice({ status: "error", message: "Saved profile not found." });
+    setTransientNotice({ status: "error", message: "Không tìm thấy profile đã lưu." });
     renderAll();
     return;
   }
 
   if (profile.locked) {
-    setTransientNotice({ status: "error", message: `Profile "${profile.name}" is locked and cannot be renamed.` });
+    setTransientNotice({ status: "error", message: `Profile "${profile.name}" đang bị khóa và không thể đổi tên.` });
     renderAll();
     return;
   }
 
   const nameConflict = state.savedProfiles.some((entry) => entry.id !== profileId && entry.name.toLowerCase() === trimmedName.toLowerCase());
   if (nameConflict) {
-    setTransientNotice({ status: "error", message: `Another profile already uses "${trimmedName}".` });
+    setTransientNotice({ status: "error", message: `Đã có profile khác dùng tên "${trimmedName}".` });
     renderAll();
     return;
   }
@@ -839,12 +1178,12 @@ function commitRenameSavedProfile(profileId, nextName) {
   profile.savedAt = new Date().toISOString();
   state.profileRename = null;
   persistStoredState();
-  setTransientNotice({ status: "success", message: `Renamed profile to "${trimmedName}".` });
+  setTransientNotice({ status: "success", message: `Đã đổi tên profile thành "${trimmedName}".` });
   renderAll();
 }
 
 function createDuplicateProfileName(sourceName) {
-  const base = `${sourceName} Copy`;
+  const base = `${sourceName} Ban sao`;
   const existingNames = new Set(state.savedProfiles.map((entry) => entry.name.toLowerCase()));
   if (!existingNames.has(base.toLowerCase())) {
     return base;
@@ -858,7 +1197,7 @@ function createDuplicateProfileName(sourceName) {
 }
 
 function createUniqueProfileName(sourceName, blockedNames = null) {
-  const base = String(sourceName || "Imported Profile").trim() || "Imported Profile";
+  const base = String(sourceName || "Profile nhập").trim() || "Profile nhập";
   const existing = blockedNames || new Set(state.savedProfiles.map((entry) => entry.name.toLowerCase()));
   if (!existing.has(base.toLowerCase())) {
     existing.add(base.toLowerCase());
@@ -877,7 +1216,7 @@ function createUniqueProfileName(sourceName, blockedNames = null) {
 function duplicateSavedProfile(profileId) {
   const profile = getSavedProfileById(profileId);
   if (!profile) {
-    setTransientNotice({ status: "error", message: "Saved profile not found." });
+    setTransientNotice({ status: "error", message: "Không tìm thấy profile đã lưu." });
     renderAll();
     return;
   }
@@ -893,14 +1232,14 @@ function duplicateSavedProfile(profileId) {
   };
 
   upsertSavedProfile(cloned);
-  setTransientNotice({ status: "success", message: `Created duplicate profile "${cloned.name}".` });
+  setTransientNotice({ status: "success", message: `Đã tạo bản sao profile "${cloned.name}".` });
   renderAll();
 }
 
 function togglePinSavedProfile(profileId) {
   const profile = getSavedProfileById(profileId);
   if (!profile) {
-    setTransientNotice({ status: "error", message: "Saved profile not found." });
+    setTransientNotice({ status: "error", message: "Không tìm thấy profile đã lưu." });
     renderAll();
     return;
   }
@@ -909,7 +1248,7 @@ function togglePinSavedProfile(profileId) {
   persistStoredState();
   setTransientNotice({
     status: "success",
-    message: profile.pinned ? `Pinned "${profile.name}" to top.` : `Unpinned "${profile.name}".`
+    message: profile.pinned ? `Đã ghim "${profile.name}" lên đầu.` : `Đã bỏ ghim "${profile.name}".`
   });
   renderAll();
 }
@@ -920,7 +1259,7 @@ function pinUnpinSelectedProfiles(pinValue) {
     .filter(Boolean);
 
   if (selected.length === 0) {
-    setTransientNotice({ status: "error", message: "No selected profiles for bulk pin/unpin." });
+    setTransientNotice({ status: "error", message: "Không có profile nào được chọn để ghim hoặc bỏ ghim." });
     renderAll();
     return;
   }
@@ -937,8 +1276,8 @@ function pinUnpinSelectedProfiles(pinValue) {
   setTransientNotice({
     status: "success",
     message: pinValue
-      ? `Pinned ${changed} selected profile(s).`
-      : `Unpinned ${changed} selected profile(s).`
+      ? `Đã ghim ${changed} profile đã chọn.`
+      : `Đã bỏ ghim ${changed} profile đã chọn.`
   });
   renderAll();
 }
@@ -946,7 +1285,7 @@ function pinUnpinSelectedProfiles(pinValue) {
 function toggleLockSavedProfile(profileId) {
   const profile = getSavedProfileById(profileId);
   if (!profile) {
-    setTransientNotice({ status: "error", message: "Saved profile not found." });
+    setTransientNotice({ status: "error", message: "Không tìm thấy profile đã lưu." });
     renderAll();
     return;
   }
@@ -958,7 +1297,7 @@ function toggleLockSavedProfile(profileId) {
   persistStoredState();
   setTransientNotice({
     status: "success",
-    message: profile.locked ? `Locked "${profile.name}".` : `Unlocked "${profile.name}".`
+    message: profile.locked ? `Đã khóa "${profile.name}".` : `Đã mở khóa "${profile.name}".`
   });
   renderAll();
 }
@@ -966,7 +1305,7 @@ function toggleLockSavedProfile(profileId) {
 function deleteSavedProfile(profileId) {
   const profile = getSavedProfileById(profileId);
   if (profile?.locked) {
-    setTransientNotice({ status: "error", message: `Profile "${profile.name}" is locked and cannot be deleted.` });
+    setTransientNotice({ status: "error", message: `Profile "${profile.name}" đang bị khóa và không thể xóa.` });
     renderAll();
     return;
   }
@@ -976,19 +1315,19 @@ function deleteSavedProfile(profileId) {
     state.profileRename = null;
   }
   persistStoredState();
-  setTransientNotice({ status: "success", message: `Deleted profile "${profile?.name || profileId}".` });
+  setTransientNotice({ status: "success", message: `Đã xóa profile "${profile?.name || profileId}".` });
   renderAll();
 }
 
 function loadSystemProfile(kind) {
   const mappings = createSystemProfile(kind);
   const labels = {
-    default: "Default",
-    coding: "Coding",
-    fast: "Fast"
+    default: "Mặc định",
+    coding: "Lập trình",
+    fast: "Nhanh"
   };
   openProfilePreview({
-    profileName: `${labels[kind] || kind} preset`,
+    profileName: `Preset ${labels[kind] || kind}`,
     mappings,
     sourceType: "system",
     sourceId: kind
@@ -998,16 +1337,16 @@ function loadSystemProfile(kind) {
 
 function exportProfile() {
   const payload = buildProfilePayload();
-  payload.name = "current-draft";
-  downloadProfilePayload(payload, "current-draft");
-  setTransientNotice({ status: "success", message: "Profile JSON exported from current draft state." });
+  payload.name = "ban-nhap-hien-tai";
+  downloadProfilePayload(payload, "ban-nhap-hien-tai");
+  setTransientNotice({ status: "success", message: "Đã xuất JSON profile từ bản nháp hiện tại." });
   renderAll();
 }
 
 function exportSavedProfile(profileId) {
   const profile = state.savedProfiles.find((entry) => entry.id === profileId);
   if (!profile) {
-    setTransientNotice({ status: "error", message: "Saved profile not found." });
+    setTransientNotice({ status: "error", message: "Không tìm thấy profile đã lưu." });
     renderAll();
     return;
   }
@@ -1029,13 +1368,13 @@ function exportSavedProfile(profileId) {
     }
   };
   downloadProfilePayload(payload, profile.name);
-  setTransientNotice({ status: "success", message: `Exported saved profile "${profile.name}".` });
+  setTransientNotice({ status: "success", message: `Đã xuất profile đã lưu "${profile.name}".` });
   renderAll();
 }
 
 function exportSavedProfileSet() {
   if (state.savedProfiles.length === 0) {
-    setTransientNotice({ status: "error", message: "No saved profiles available for export." });
+    setTransientNotice({ status: "error", message: "Không có profile đã lưu nào để xuất." });
     renderAll();
     return;
   }
@@ -1061,13 +1400,13 @@ function exportSavedProfileSet() {
     }))
   };
 
-  downloadProfilePayload(payload, "saved-profile-set");
-  setTransientNotice({ status: "success", message: `Exported ${payload.profileCount} saved profiles into one file.` });
+  downloadProfilePayload(payload, "bo-profile-da-luu");
+  setTransientNotice({ status: "success", message: `Đã xuất ${payload.profileCount} profile đã lưu vào một tệp.` });
   renderAll();
 }
 
 function createUniqueNameInRegistry(baseName, registry) {
-  const base = String(baseName || "Imported Profile").trim() || "Imported Profile";
+  const base = String(baseName || "Profile nhập").trim() || "Profile nhập";
   if (!registry.has(base.toLowerCase())) {
     registry.add(base.toLowerCase());
     return base;
@@ -1084,12 +1423,12 @@ function createUniqueNameInRegistry(baseName, registry) {
 
 function normalizeImportedProfileSet(payload) {
   if (!payload || typeof payload !== "object") {
-    throw new Error("Profile set JSON is invalid.");
+    throw new Error("JSON bộ profile không hợp lệ.");
   }
 
   const entries = Array.isArray(payload.savedProfiles) ? payload.savedProfiles : null;
   if (!entries || entries.length === 0) {
-    throw new Error("Profile set JSON is missing savedProfiles.");
+    throw new Error("JSON bộ profile thiếu trường savedProfiles.");
   }
 
   const nameRegistry = new Set();
@@ -1116,7 +1455,7 @@ function normalizeImportedProfileSet(payload) {
       continue;
     }
 
-    const profileName = createUniqueNameInRegistry(raw?.name || "Imported Profile", nameRegistry);
+    const profileName = createUniqueNameInRegistry(raw?.name || "Profile nhập", nameRegistry);
     normalizedProfiles.push({
       name: profileName,
       source: String(raw?.source || "imported-set"),
@@ -1128,7 +1467,7 @@ function normalizeImportedProfileSet(payload) {
   }
 
   if (normalizedProfiles.length === 0) {
-    throw new Error("No compatible profile mappings were found in this profile set.");
+    throw new Error("Không tìm thấy mapping profile tương thích trong bộ profile này.");
   }
 
   return normalizedProfiles;
@@ -1137,7 +1476,7 @@ function normalizeImportedProfileSet(payload) {
 function toStoredProfile(profile) {
   return {
     id: `profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    name: String(profile.name || "Imported Profile"),
+    name: String(profile.name || "Profile nhập"),
     source: String(profile.source || "imported-set"),
     savedAt: String(profile.savedAt || new Date().toISOString()),
     pinned: Boolean(profile.pinned),
@@ -1170,7 +1509,7 @@ function buildProfileSetImportPlan(mode, importedProfiles) {
     operations.push(...importedProfiles.map((profile) => ({
       name: profile.name,
       type: "create",
-      detail: "replace set"
+      detail: "thay thế toàn bộ"
     })));
     summary.created = importedProfiles.length;
   } else {
@@ -1186,7 +1525,7 @@ function buildProfileSetImportPlan(mode, importedProfiles) {
           operations.push({
             name: imported.name,
             type: "skip-locked",
-            detail: "local profile is locked"
+            detail: "profile cục bộ đang bị khóa"
           });
           continue;
         }
@@ -1204,7 +1543,7 @@ function buildProfileSetImportPlan(mode, importedProfiles) {
         operations.push({
           name: imported.name,
           type: "update",
-          detail: existing.locked ? "updated locked profile" : "updated existing profile"
+          detail: existing.locked ? "đã cập nhật profile bị khóa" : "đã cập nhật profile hiện có"
         });
       } else {
         nextProfiles.push(toStoredProfile(imported));
@@ -1213,7 +1552,7 @@ function buildProfileSetImportPlan(mode, importedProfiles) {
         operations.push({
           name: imported.name,
           type: "create",
-          detail: "new profile"
+          detail: "profile mới"
         });
       }
     }
@@ -1235,6 +1574,7 @@ function buildProfileSetImportPlan(mode, importedProfiles) {
 
 function openProfileSetImportPreview(payload) {
   const importedProfiles = normalizeImportedProfileSet(payload);
+  state.pendingModelPicker = null;
   state.pendingProfilePreview = null;
   state.pendingProfileSetImport = {
     mode: "skip-locked",
@@ -1277,7 +1617,7 @@ function applyProfileSetImportPreview() {
   const summary = plan.summary;
   setTransientNotice({
     status: "success",
-    message: `Imported set (${plan.mode}): +${summary.created} create, ${summary.updated} update, ${summary.skippedLocked} skipped locked.`
+    message: `Đã nhập bộ (${getImportModeLabel(plan.mode)}): +${summary.created} tạo mới, ${summary.updated} cập nhật, ${summary.skippedLocked} bỏ qua do khóa.`
   });
   renderAll();
 }
@@ -1293,20 +1633,24 @@ function openProfileFilePicker(mode) {
 
 function importProfileObject(payload) {
   if (!payload || typeof payload !== "object") {
-    throw new Error("Profile JSON is invalid.");
+    throw new Error("JSON profile không hợp lệ.");
   }
 
   const draftMappings = payload?.mappings?.draft;
   if (!draftMappings || typeof draftMappings !== "object" || Array.isArray(draftMappings)) {
-    throw new Error("Profile JSON is missing mappings.draft.");
+    throw new Error("JSON profile thiếu mappings.draft.");
   }
 
   let appliedCount = 0;
+  let firstSlotId = "";
   for (const slot of state.slots) {
     if (Object.hasOwn(draftMappings, slot.id)) {
       const value = String(draftMappings[slot.id] || "").trim();
       if (!value) {
-        throw new Error(`Imported profile has an empty target for slot: ${slot.id}`);
+        throw new Error(`Profile nhập có model đích trống cho slot: ${slot.id}`);
+      }
+      if (!firstSlotId) {
+        firstSlotId = slot.id;
       }
       state.draftAliases[slot.id] = value;
       touchRecentTarget(value);
@@ -1315,10 +1659,15 @@ function importProfileObject(payload) {
   }
 
   if (appliedCount === 0) {
-    throw new Error("No supported slot mappings were found in the imported profile.");
+    throw new Error("Không tìm thấy mapping slot nào được hỗ trợ trong profile đã nhập.");
   }
 
-  setTransientNotice({ status: "success", message: `Imported profile staged ${appliedCount} slot mapping(s).` });
+  if (firstSlotId) {
+    state.ui.selectedSlotId = firstSlotId;
+    persistStoredState();
+  }
+
+  setTransientNotice({ status: "success", message: `Đã đưa profile nhập vào bản nháp với ${appliedCount} mapping slot.` });
   renderAll();
 }
 
@@ -1338,7 +1687,7 @@ async function handleProfileFile(event) {
       importProfileObject(payload);
     }
   } catch (error) {
-    setTransientNotice({ status: "error", message: error.message || "Profile import failed." });
+    setTransientNotice({ status: "error", message: error.message || "Nhập profile thất bại." });
     renderAll();
   } finally {
     state.profileFileImportMode = "single-mapping";
@@ -1352,16 +1701,28 @@ function applyQuickPreset(presetId) {
     return;
   }
 
+  let firstSlotId = "";
   if (preset.mappings === "__defaults__") {
     for (const slot of state.slots) {
+      if (!firstSlotId) {
+        firstSlotId = slot.id;
+      }
       state.draftAliases[slot.id] = getDefaultRoute(slot.id);
     }
   } else {
     for (const [slotId, target] of Object.entries(preset.mappings)) {
       if (getSlotById(slotId)) {
+        if (!firstSlotId) {
+          firstSlotId = slotId;
+        }
         state.draftAliases[slotId] = target;
       }
     }
+  }
+
+  if (firstSlotId) {
+    state.ui.selectedSlotId = firstSlotId;
+    persistStoredState();
   }
 
   renderAll();
@@ -1369,71 +1730,85 @@ function applyQuickPreset(presetId) {
 
 function renderHero() {
   const metrics = deriveMetrics();
-  const catalogState = state.catalog.ok ? "catalog healthy" : "catalog degraded";
-  els.heroSummary.textContent = `${metrics.slotCount} slots loaded, ${metrics.liveCatalogCount} live models, ${catalogState}.`;
-
-  const pills = [
-    { label: `Catalog: ${state.catalog.ok ? "Live" : "Degraded"}` },
-    { label: `DB: ${state.health?.ok ? "Reachable" : "Unknown"}` },
-    { label: `Unsaved changes: ${metrics.dirtyCount}` },
-    { label: `Sort: ${state.ui.sortMode}` }
-  ];
-
-  els.heroStatusRail.innerHTML = pills.map((pill) => `<span class="status-pill">${escapeHtml(pill.label)}</span>`).join("");
-  els.saveButton.disabled = state.saving || metrics.dirtyCount === 0;
-  els.reloadButton.disabled = state.saving;
-  els.exportProfileButton.disabled = state.saving || metrics.slotCount === 0;
-  els.importProfileButton.disabled = state.saving || metrics.slotCount === 0;
-  els.opsExportProfileButton.disabled = state.saving || metrics.slotCount === 0;
-  els.opsImportProfileButton.disabled = state.saving || metrics.slotCount === 0;
-  els.saveProfileButton.disabled = state.saving || metrics.slotCount === 0;
-}
-
-function renderSystemHealth() {
+  const selectedSlot = getSelectedSlot();
   const cards = [
     {
-      label: "Router status",
-      value: state.health?.ok ? "Online" : "Unknown",
+      label: "Router",
+      value: state.health?.ok ? "Sẵn sàng" : "Chưa rõ",
       tone: state.health?.ok ? "ok" : "error",
-      meta: state.health?.routerBaseUrl || "Router URL unavailable",
+      meta: state.health?.routerBaseUrl || "Không có URL router",
       checkedAt: state.health?.checkedAt
     },
     {
-      label: "Catalog status",
-      value: state.catalog.ok ? "Live" : "Degraded",
-      tone: state.catalog.ok ? "ok" : "error",
-      meta: state.catalog.ok ? `${state.catalog.models.length} models available` : state.catalog.error || "Live catalog unavailable",
+      label: "Danh mục",
+      value: state.catalog.ok ? "Đang hoạt động" : "Suy giảm",
+      tone: state.catalog.ok ? "ok" : "pending",
+      meta: state.catalog.ok ? `${state.catalog.models.length} model trực tiếp` : state.catalog.error || "Danh mục trực tiếp không khả dụng",
       checkedAt: state.catalog.checkedAt
     },
     {
       label: "Bridge DB",
-      value: state.health?.routerDbPath ? "Reachable" : "Missing",
+      value: state.health?.routerDbPath ? "Truy cập được" : "Thiếu",
       tone: state.health?.routerDbPath ? "ok" : "error",
-      meta: state.health?.routerDbPath || "DB path unavailable",
+      meta: state.health?.routerDbPath || "Không có đường dẫn DB",
       checkedAt: state.health?.checkedAt
     },
     {
-      label: "Last apply",
-      value: state.lastApplyResult?.status || "Idle",
-      tone: state.lastApplyResult?.status === "success" ? "ok" : (state.lastApplyResult?.status === "error" || state.lastApplyResult?.status === "validation-error" ? "error" : "pending"),
-      meta: state.lastApplyResult?.backupPath || "No write recorded in this session",
-      checkedAt: state.lastApplyResult?.appliedAt
+      label: "Lần áp dụng cuối",
+      value: titleCaseStatus(metrics.lastApplyStatus),
+      tone: metrics.lastApplyStatus === "success" ? "ok" : (metrics.lastApplyStatus === "error" || metrics.lastApplyStatus === "validation-error" ? "error" : "neutral"),
+      meta: state.lastApplyResult?.backupPath || state.applyHistory[0]?.message || "Trình duyệt này chưa ghi lần áp dụng nào",
+      checkedAt: metrics.lastApplyAt
     }
   ];
+  const toolsDisabled = state.saving || metrics.slotCount === 0;
+  const saveDisabled = state.saving || metrics.dirtyCount === 0;
+  const summary = state.saving
+    ? "Đang áp dụng các thay đổi route tạm vào 9router."
+    : selectedSlot
+      ? `${metrics.slotCount} slot đang hoạt động. Đang chỉnh ${selectedSlot.label}. Có ${metrics.dirtyCount} thay đổi tạm.`
+      : "Đang tải trung tâm điều khiển route.";
 
-  els.systemHealth.innerHTML = `
-    <div class="section-head">
-      <div>
-        <p class="eyebrow">System Health</p>
-        <h2>Operational Snapshot</h2>
+  els.statusCanopy.innerHTML = `
+    <div class="canopy-layout">
+      <div class="canopy-copy">
+        <p class="eyebrow">Claude Desktop x 9router</p>
+        <h1 class="display-title">Bảng điều khiển bridge</h1>
+        <p class="lede">
+          Trung tâm điều khiển route để tạm gán và áp dụng các remap slot Claude Desktop lên bridge 9router cục bộ của bạn.
+        </p>
+        <div class="canopy-summary">
+          ${renderPill(summary, "neutral")}
+          ${renderPill(`Chưa lưu ${metrics.dirtyCount}`, metrics.dirtyCount > 0 ? "pending" : "ok")}
+          ${renderPill(`Yêu thích ${metrics.favoriteCount}`)}
+          ${renderPill(`Gần đây ${metrics.recentTargetCount}`)}
+        </div>
+        ${!state.catalog.ok ? `
+          <div class="toolbar-row" style="margin-top: 18px;">
+            ${renderPill("Danh mục suy giảm", "pending")}
+            <div class="helper small">Duyệt có gợi ý đang bị hạn chế. Bạn vẫn có thể nhập tay và dùng mapping đã lưu.</div>
+          </div>
+        ` : ""}
+      </div>
+      <div class="canopy-actions">
+        <div class="utility-launchers">
+          <button class="utility-chip${state.ui.isUtilityDrawerOpen && state.ui.activeUtilityPanel === "profiles" ? " active" : ""}" type="button" data-action="toggle-utility-panel" data-panel="profiles">Profile</button>
+          <button class="utility-chip${state.ui.isUtilityDrawerOpen && state.ui.activeUtilityPanel === "analytics" ? " active" : ""}" type="button" data-action="toggle-utility-panel" data-panel="analytics">Thống kê</button>
+          <button class="utility-chip${state.ui.isUtilityDrawerOpen && state.ui.activeUtilityPanel === "memory" ? " active" : ""}" type="button" data-action="toggle-utility-panel" data-panel="memory">Ghi nhớ</button>
+          <button class="utility-chip${state.ui.isUtilityDrawerOpen && state.ui.activeUtilityPanel === "activity" ? " active" : ""}" type="button" data-action="toggle-utility-panel" data-panel="activity">Hoạt động</button>
+        </div>
+        <div class="canopy-action-row">
+          <button class="ghost-button" type="button" data-action="reload-all" ${state.saving ? "disabled" : ""}>Tải lại</button>
+          <button class="ghost-button" type="button" data-action="import-profile" ${toolsDisabled ? "disabled" : ""}>Nhập</button>
+          <button class="ghost-button" type="button" data-action="export-profile" ${toolsDisabled ? "disabled" : ""}>Xuất</button>
+          <button class="primary-button" type="button" data-action="apply-all" ${saveDisabled ? "disabled" : ""}>Áp dụng mapping</button>
+        </div>
       </div>
     </div>
     <div class="health-grid">
       ${cards.map((card) => `
         <article class="health-card">
-          <div class="toolbar-inline">
-            <span class="badge ${card.tone}">${escapeHtml(card.label)}</span>
-          </div>
+          ${renderBadge(card.label, card.tone)}
           <div class="health-value">${escapeHtml(card.value)}</div>
           <div class="helper">${escapeHtml(card.meta)}</div>
           <div class="activity-meta">${escapeHtml(formatRelativeTime(card.checkedAt))}</div>
@@ -1443,306 +1818,638 @@ function renderSystemHealth() {
   `;
 }
 
-function renderProviderFilters() {
-  const providers = getVisibleProviders();
-  const selected = getSelectedProviders();
-  const allActive = selected.length === providers.length || providers.length === 0;
-
-  els.providerFilters.innerHTML = [
-    `<button class="filter-chip${allActive ? " active" : ""}" type="button" data-provider-chip="__all__">All</button>`,
-    ...providers.map((provider) => `
-      <button class="filter-chip${selected.includes(provider) ? " active" : ""}" type="button" data-provider-chip="${escapeHtml(provider)}">
-        ${escapeHtml(provider)}
-      </button>
-    `)
-  ].join("");
-
-  els.modeCodeFirst.classList.toggle("active", !state.ui.showAll);
-  els.modeShowAll.classList.toggle("active", state.ui.showAll);
-  els.sortSelect.value = state.ui.sortMode;
-}
-
-function renderQuickPresets() {
-  els.quickPresets.innerHTML = QUICK_PRESETS.map((preset) => `
-    <button class="preset-card" type="button" data-preset-id="${escapeHtml(preset.id)}">
-      <strong>${escapeHtml(preset.title)}</strong>
-      <p>${escapeHtml(preset.description)}</p>
-    </button>
-  `).join("");
-}
-
-function renderProfileManager() {
-  syncSelectedProfileIds();
-
-  els.profileQuickLoads.innerHTML = [
-    `<button class="action-chip" type="button" data-system-profile="default">Load default</button>`,
-    `<button class="action-chip" type="button" data-system-profile="coding">Load coding</button>`,
-    `<button class="action-chip" type="button" data-system-profile="fast">Load fast</button>`
-  ].join("");
-
-  const profiles = getSortedSavedProfiles();
-  const selectedCount = state.selectedProfileIds.length;
-
-  els.profileBulkActions.innerHTML = `
-    <button class="action-chip" type="button" data-action="select-all-profiles" ${profiles.length === 0 ? "disabled" : ""}>Select all</button>
-    <button class="action-chip" type="button" data-action="clear-selected-profiles" ${selectedCount === 0 ? "disabled" : ""}>Clear selection</button>
-    <button class="action-chip" type="button" data-action="bulk-pin-selected" ${selectedCount === 0 ? "disabled" : ""}>Pin selected</button>
-    <button class="action-chip" type="button" data-action="bulk-unpin-selected" ${selectedCount === 0 ? "disabled" : ""}>Unpin selected</button>
-    <button class="action-chip" type="button" data-action="export-profile-set" ${profiles.length === 0 ? "disabled" : ""}>Export profile set</button>
-    <button class="action-chip" type="button" data-action="import-profile-set">Import profile set</button>
-  `;
-
-  els.profileBulkSummary.textContent = profiles.length === 0
-    ? "No saved profiles available."
-    : `${selectedCount} selected out of ${profiles.length} saved profiles.`;
-
-  els.profileManagerList.innerHTML = profiles.length === 0
-    ? `<div class="empty-state">No local profiles saved yet.</div>`
-    : profiles.map((profile) => {
-      const isRenaming = state.profileRename?.id === profile.id;
-      const stats = buildProfileStats(profile.mappings || {});
-      const selected = isProfileSelected(profile.id);
-      return `
-      <article class="profile-card${profile.pinned ? " pinned" : ""}${selected ? " selected" : ""}">
-        <div class="profile-card-head">
-          <div>
-            <div class="history-title">${escapeHtml(profile.name)}</div>
-            <div class="activity-meta">${escapeHtml(formatRelativeTime(profile.savedAt))}</div>
-          </div>
-          <div class="toolbar-inline">
-            <label class="profile-select-control">
-              <input type="checkbox" data-action="toggle-select-profile" data-profile-id="${escapeHtml(profile.id)}" ${selected ? "checked" : ""}>
-              <span>Select</span>
-            </label>
-            ${profile.pinned ? `<span class="badge ok">Pinned</span>` : ""}
-            ${profile.locked ? `<span class="badge pending">Locked</span>` : ""}
-            <span class="badge">${escapeHtml(profile.source || "local")}</span>
-          </div>
-        </div>
-        <div class="profile-badge-row">
-          <span class="badge">Mapped ${stats.mappedCount}</span>
-          <span class="badge">Custom ${stats.customCount}</span>
-          <span class="badge ${stats.diffCount > 0 ? "pending" : "ok"}">Diff ${stats.diffCount}</span>
-        </div>
-        <div class="helper">${Object.keys(profile.mappings || {}).length} slot mappings saved.</div>
-        ${isRenaming ? `
-          <div class="profile-rename-row">
-            <input type="text" value="${escapeHtml(state.profileRename?.name || profile.name)}" data-profile-rename-input="${escapeHtml(profile.id)}" placeholder="Profile name">
-            <button class="action-chip" type="button" data-action="commit-rename-profile" data-profile-id="${escapeHtml(profile.id)}">Save</button>
-            <button class="action-chip" type="button" data-action="cancel-rename-profile">Cancel</button>
-          </div>
-        ` : `
-          <div class="profile-card-actions">
-            <button class="action-chip" type="button" data-action="load-saved-profile" data-profile-id="${escapeHtml(profile.id)}">Load</button>
-            <button class="action-chip" type="button" data-action="duplicate-saved-profile" data-profile-id="${escapeHtml(profile.id)}">Duplicate</button>
-            <button class="action-chip" type="button" data-action="rename-saved-profile" data-profile-id="${escapeHtml(profile.id)}" ${profile.locked ? "disabled" : ""}>Rename</button>
-            <button class="action-chip" type="button" data-action="toggle-pin-saved-profile" data-profile-id="${escapeHtml(profile.id)}">${profile.pinned ? "Unpin" : "Pin"}</button>
-            <button class="action-chip" type="button" data-action="toggle-lock-saved-profile" data-profile-id="${escapeHtml(profile.id)}">${profile.locked ? "Unlock" : "Lock"}</button>
-            <button class="action-chip" type="button" data-action="export-saved-profile" data-profile-id="${escapeHtml(profile.id)}">Export</button>
-            <button class="action-chip" type="button" data-action="delete-saved-profile" data-profile-id="${escapeHtml(profile.id)}" ${profile.locked ? "disabled" : ""}>Delete</button>
-          </div>
-        `}
-      </article>
-    `;
-    }).join("");
-}
-
-function renderAnalytics() {
+function renderSystemHealth() {
   const metrics = deriveMetrics();
-  const cards = [
-    { label: "Mapped slots", value: String(metrics.mappedSlots) },
-    { label: "Custom routes", value: String(metrics.customRouteCount) },
-    { label: "Unsaved edits", value: String(metrics.dirtyCount) },
-    { label: "Last apply", value: metrics.lastApplyStatus },
-    { label: "Catalog size", value: `${metrics.liveCatalogCount} / ${metrics.codeFirstCatalogCount}` },
-    { label: "Favorites", value: String(metrics.favoriteCount) }
-  ];
+  const selectedSlotId = state.ui.selectedSlotId;
 
-  els.analyticsGrid.innerHTML = cards.map((card) => `
-    <article class="metric-card">
-      <div class="metric-label">${escapeHtml(card.label)}</div>
-      <div class="metric-value">${escapeHtml(card.value)}</div>
-    </article>
-  `).join("");
-
-  const topTargets = getTopTargets();
-  els.topTargets.innerHTML = `
-    <div class="stack-title">Top targets</div>
-    ${topTargets.length === 0 ? `<div class="empty-state">No active routes yet.</div>` : topTargets.map((entry) => `
-      <article class="target-card">
-        <div class="history-title mono">${escapeHtml(entry.modelId)}</div>
-        <div class="activity-meta">Used by ${entry.count} slot${entry.count > 1 ? "s" : ""}</div>
-      </article>
-    `).join("")}
-  `;
-}
-
-function renderMemorySections() {
-  els.favoritesSection.innerHTML = `
-    <div class="stack-title">Favorites</div>
-    ${state.favorites.length === 0 ? `<div class="empty-state">No favorite targets yet.</div>` : `
-      <div class="favorites-row">
-        ${state.favorites.map((modelId) => `
-          <button class="action-chip" type="button" data-search-model="${escapeHtml(modelId)}">${escapeHtml(modelId)}</button>
-        `).join("")}
+  els.slotNavigator.innerHTML = `
+    <div class="nav-header">
+      <div>
+        <p class="eyebrow">Điều hướng slot</p>
+        <h2 class="section-title">Các slot route Claude</h2>
+        <div class="helper">Trạng thái gọn cho từng slot desktop. Chọn một slot để chỉnh trong khu làm việc.</div>
       </div>
-    `}
-  `;
-
-  els.recentTargetsSection.innerHTML = `
-    <div class="stack-title">Recent targets</div>
-    ${state.recentTargets.length === 0 ? `<div class="empty-state">No recent targets yet.</div>` : `
-      <div class="recent-row">
-        ${state.recentTargets.map((entry) => `
-          <button class="action-chip" type="button" data-search-model="${escapeHtml(entry.modelId)}">
-            ${escapeHtml(entry.modelId)}
-          </button>
-        `).join("")}
-      </div>
-    `}
-  `;
-}
-
-function renderApplyHistory() {
-  els.applyHistorySection.innerHTML = state.applyHistory.length === 0
-    ? `<div class="empty-state">No bridge writes recorded in this browser yet.</div>`
-    : state.applyHistory.map((entry) => `
-      <article class="history-item">
-        <div class="toolbar-inline">
-          <span class="badge ${entry.status === "success" ? "ok" : entry.status === "validation-error" ? "pending" : "error"}">${escapeHtml(entry.status)}</span>
-        </div>
-        <div class="history-title">${escapeHtml(entry.changedSlots.join(", ") || "No changed slots")}</div>
-        <div class="activity-meta">${escapeHtml(formatRelativeTime(entry.appliedAt))}</div>
-        <div class="helper">${escapeHtml(entry.backupPath || entry.message || "No backup path")}</div>
-      </article>
-    `).join("");
-}
-
-function renderWorkspaceHeader() {
-  const filtered = getFilteredModels();
-  const dirtyCount = getDirtySlots().length;
-  els.workspaceHeader.innerHTML = `
-    <div class="workspace-headline">
-      <p class="eyebrow">Mapping Workspace</p>
-      <h2>Desktop slot remapping</h2>
-      <div class="workspace-summary">
-        ${state.slots.length} slots, ${filtered.length} visible models, ${dirtyCount} pending edit${dirtyCount === 1 ? "" : "s"}.
-      </div>
+      ${renderBadge(`${metrics.dirtyCount} tạm`, metrics.dirtyCount > 0 ? "pending" : "ok")}
     </div>
-    <div class="workspace-rail">
-      <span class="status-pill">${escapeHtml(state.catalog.ok ? "Catalog live" : "Catalog degraded")}</span>
-      <span class="status-pill">${escapeHtml(`Providers: ${getSelectedProviders().length || 0}`)}</span>
-    </div>
-  `;
-}
-
-function renderSuggestionGroups(slotId, currentValue) {
-  if (state.rawMode[slotId]) {
-    return `<div class="raw-hint">Raw input mode is active for this slot. Suggestions are intentionally hidden.</div>`;
-  }
-
-  if (!state.catalog.ok) {
-    return `<div class="raw-hint">Live catalog unavailable. Use raw input to set any model id manually.</div>`;
-  }
-
-  const groups = getSuggestionGroups(currentValue);
-  if (groups.length === 0) {
-    return `<div class="raw-hint">No suggestions match the current filter. Search less aggressively or switch to Show all.</div>`;
-  }
-
-  return groups.map((group) => `
-    <section class="provider-group">
-      <div class="provider-head">
-        <div class="provider-label">${escapeHtml(group.label)}</div>
-        <div class="helper">${group.models.length} candidate${group.models.length === 1 ? "" : "s"}</div>
-      </div>
-      <div class="chip-row">
-        ${group.models.map((model) => {
-          const active = model.id === currentValue;
-          const flags = [
-            model.isCodeFirst ? `<span class="flag-chip">Code-first</span>` : "",
-            isFavorite(model.id) ? `<span class="flag-chip favorite">Favorite</span>` : "",
-            getRecentRank(model.id) !== -1 ? `<span class="flag-chip recent">Recent</span>` : "",
-            active ? `<span class="flag-chip current">Current</span>` : ""
-          ].filter(Boolean).join("");
+    <div class="slot-list">
+      ${state.slots.length === 0
+        ? `
+          <article class="empty-card">
+            <p class="empty-state">Chưa tải được slot bridge nào.</p>
+          </article>
+        `
+        : state.slots.map((slot) => {
+          const status = getSlotStatus(slot.id);
+          const currentValue = getDraftAlias(slot.id) || "Chưa gán";
+          const persistedValue = getPersistedAlias(slot.id) || "trống";
+          const selected = slot.id === selectedSlotId;
+          const subcopy = state.rawMode[slot.id]
+            ? "Slot này đang bật nhập tay."
+            : isDirty(slot.id)
+              ? `DB ${truncateMiddle(persistedValue, 34)}`
+              : (slot.hint || "Sẵn sàng");
 
           return `
-            <button class="model-chip${active ? " active" : ""}${isFavorite(model.id) ? " favorite" : ""}${getRecentRank(model.id) !== -1 ? " recent" : ""}" type="button" data-action="pick-model" data-slot-id="${escapeHtml(slotId)}" data-model-id="${escapeHtml(model.id)}">
-              <strong>${highlightMatch(model.root, state.ui.search)}</strong>
-              <span class="mono">${highlightMatch(model.id, state.ui.search)}</span>
-              <div class="model-flags">${flags}</div>
+            <button class="slot-nav-card ${status.className}${selected ? " selected" : ""}" type="button" data-action="select-slot" data-slot-id="${escapeHtml(slot.id)}">
+              <div class="slot-nav-head">
+                <div>
+                  <div class="slot-nav-title">${escapeHtml(slot.label)}</div>
+                </div>
+                <div class="toolbar-row">
+                  <span class="slot-delta"></span>
+                  ${renderBadge(status.label, status.badgeTone)}
+                </div>
+              </div>
+              <div class="slot-nav-route">${escapeHtml(truncateMiddle(currentValue, 42))}</div>
+              <div class="slot-nav-subtle">${escapeHtml(subcopy)}</div>
             </button>
           `;
         }).join("")}
-      </div>
-    </section>
-  `).join("");
+    </div>
+  `;
 }
 
-function renderSlotCard(slot) {
+function getStudioRouteSummary(slotId) {
+  const currentValue = getDraftAlias(slotId);
+  if (!currentValue) {
+    return "Slot này chưa có route đích nào được đưa vào bản nháp.";
+  }
+
+  const descriptor = getTargetMeta(currentValue);
+  const modeNote = state.rawMode[slotId]
+    ? "Đang bật nhập tay."
+    : state.catalog.ok
+      ? "Có thể chọn từ danh mục gợi ý."
+      : "Danh mục đang suy giảm; bạn vẫn có thể nhập tay.";
+
+  return `Bản nháp đang route qua ${formatProviderLabel(descriptor.provider)} tới ${descriptor.root}. ${modeNote}`;
+}
+
+function renderStateCard(kind, label, value, meta) {
+  return `
+    <article class="state-card" data-kind="${escapeHtml(kind)}">
+      <div class="state-card-label">${escapeHtml(label)}</div>
+      <div class="state-card-value mono">${escapeHtml(value || "trống")}</div>
+      <div class="state-card-meta">${escapeHtml(meta)}</div>
+    </article>
+  `;
+}
+
+function renderCandidateCard(slotId, model, currentValue, groupKey) {
+  const active = model.id === currentValue;
+  const favorite = isFavorite(model.id);
+  const recent = getRecentRank(model.id) !== -1;
+  const flags = [
+    model.isCodeFirst ? `<span class="flag-chip code-first">Ưu tiên code</span>` : "",
+    favorite ? `<span class="flag-chip favorite">Yêu thích</span>` : "",
+    recent ? `<span class="flag-chip recent">Gần đây</span>` : "",
+    active ? `<span class="flag-chip current">Hiện tại</span>` : ""
+  ].filter(Boolean).join("");
+
+  return `
+    <article class="candidate-card${active ? " active" : ""}${groupKey === "current-target" ? " current-pinned" : ""}">
+      <div class="candidate-card-head">
+        <button class="candidate-main" type="button" data-action="pick-model" data-slot-id="${escapeHtml(slotId)}" data-model-id="${escapeHtml(model.id)}">
+          <p class="candidate-title">${highlightMatch(model.root, state.ui.search)}</p>
+          <div class="candidate-route">${highlightMatch(model.id, state.ui.search)}</div>
+        </button>
+        <button class="icon-button" type="button" data-action="toggle-favorite-model" data-model-id="${escapeHtml(model.id)}">
+          ${favorite ? "Đã lưu" : "Lưu"}
+        </button>
+      </div>
+      <div class="candidate-foot">
+        <div class="candidate-flags">${flags}</div>
+        ${renderBadge(formatProviderLabel(model.ownedBy), "neutral")}
+      </div>
+    </article>
+  `;
+}
+
+function renderProviderFilters() {
+  const slot = getSelectedSlot();
+  if (!slot) {
+    els.routeStudio.innerHTML = `
+      <div class="studio-shell">
+        <p class="eyebrow">Khu chỉnh route</p>
+        <h2 class="section-title">Chưa chọn slot</h2>
+        <article class="empty-card">
+          <p class="empty-state">Chọn một slot Claude để xem mapping hiện tại và đưa đích mới vào bản nháp.</p>
+        </article>
+      </div>
+    `;
+    return;
+  }
+
   const currentValue = getDraftAlias(slot.id);
   const persistedValue = getPersistedAlias(slot.id);
   const defaultValue = getDefaultRoute(slot.id);
   const status = getSlotStatus(slot.id);
-  const rawChecked = state.rawMode[slot.id] ? "checked" : "";
+  const descriptor = getTargetMeta(currentValue);
+  const favoriteCurrent = isFavorite(currentValue);
 
-  return `
-    <article class="slot-card ${status.className}" data-slot-id="${escapeHtml(slot.id)}">
-      <div class="slot-head">
-        <div class="slot-title">
-          <p class="eyebrow">Claude Desktop slot</p>
-          <h2>${escapeHtml(slot.label)}</h2>
+  els.routeStudio.innerHTML = `
+    <div class="studio-shell ${status.className}">
+      <div class="studio-header">
+        <div class="studio-header-copy">
+          <p class="eyebrow">Slot hiện tại</p>
+          <h2 class="slot-title">${escapeHtml(slot.label)}</h2>
+          <p class="studio-subcopy">${escapeHtml(slot.hint || "Slot desktop này sẵn sàng để map lại.")}</p>
+          <div class="studio-summary">
+            ${renderPill(status.label, status.badgeTone)}
+            ${renderPill(state.rawMode[slot.id] ? "Nhập tay" : "Duyệt gợi ý", state.rawMode[slot.id] ? "pending" : "ok")}
+            ${renderPill(state.catalog.ok ? "Danh mục hoạt động" : "Danh mục suy giảm", state.catalog.ok ? "ok" : "pending")}
+          </div>
         </div>
-        <span class="state-badge ${status.badgeTone}">${escapeHtml(status.label)}</span>
+        <div class="studio-meta">
+          ${renderPill(`Nhà cung cấp ${formatProviderLabel(descriptor.provider)}`, "neutral")}
+          ${renderPill(descriptor.root)}
+        </div>
       </div>
 
-      <div class="slot-subcopy">${escapeHtml(slot.hint || "")}</div>
-
-      <div class="slot-lines">
-        <div><span class="slot-line-label">Slot id:</span> <span class="mono">${escapeHtml(slot.id)}</span></div>
-        <div><span class="slot-line-label">Current DB alias:</span> <span class="mono">${escapeHtml(persistedValue || "none")}</span></div>
-        <div><span class="slot-line-label">Default route:</span> <span class="mono">${escapeHtml(defaultValue)}</span></div>
+      <div class="state-trio">
+        ${renderStateCard("persisted", "Đã lưu trong DB", persistedValue || "trống", "Alias hiện đang lưu trong 9router/db.json")}
+        ${renderStateCard("draft", "Đích bản nháp", currentValue || "trống", "Giá trị có thể sửa cho lần áp dụng tiếp theo")}
+        ${renderStateCard("default", "Route Claude mặc định", defaultValue, "Route dự phòng dùng khi khôi phục mặc định")}
       </div>
 
-      <div class="slot-edit-grid">
-        <div>
+      <section class="studio-editor">
+        <div class="editor-head">
+          <div>
+            <p class="eyebrow">Trình chỉnh đích</p>
+            <h3 class="section-title">Bản nháp route</h3>
+            <div class="helper">${escapeHtml(getStudioRouteSummary(slot.id))}</div>
+          </div>
+          <div class="segmented-control">
+            <button class="segmented-button${!state.rawMode[slot.id] ? " active" : ""}" type="button" data-action="set-raw-mode" data-slot-id="${escapeHtml(slot.id)}" data-mode="guided">Gợi ý</button>
+            <button class="segmented-button${state.rawMode[slot.id] ? " active" : ""}" type="button" data-action="set-raw-mode" data-slot-id="${escapeHtml(slot.id)}" data-mode="raw">Nhập tay</button>
+          </div>
+        </div>
+
+        <div class="editor-grid">
           <label class="field">
-            <span>Target 9router model</span>
+            <span>Model đích của 9router</span>
             <input class="mapping-input mono" type="text" value="${escapeHtml(currentValue)}" placeholder="cx/gpt-5.4" data-slot-input="${escapeHtml(slot.id)}">
           </label>
-
-          <div class="slot-metrics">
-            <span class="badge ${isDirty(slot.id) ? "pending" : "ok"}">${isDirty(slot.id) ? "Draft diverges from DB" : "Draft matches DB"}</span>
-            <span class="badge">${escapeHtml(state.rawMode[slot.id] ? "Raw input" : "Guided")}</span>
-          </div>
-
-          <div class="slot-actions">
-            <button class="action-chip" type="button" data-action="reset-slot" data-slot-id="${escapeHtml(slot.id)}">Revert to persisted</button>
-            <button class="action-chip" type="button" data-action="default-slot" data-slot-id="${escapeHtml(slot.id)}">Map to default Claude</button>
-            <button class="action-chip${isFavorite(currentValue) ? " active" : ""}" type="button" data-action="toggle-favorite-current" data-slot-id="${escapeHtml(slot.id)}">
-              ${isFavorite(currentValue) ? "Unfavorite current" : "Favorite current"}
-            </button>
-          </div>
+          <button class="tonal-button" type="button" data-action="open-model-picker" data-slot-id="${escapeHtml(slot.id)}">Mở bộ chọn model</button>
         </div>
 
-        <div class="slot-side-actions">
-          <label class="toggle-inline">
-            <input type="checkbox" data-action="toggle-raw" data-slot-id="${escapeHtml(slot.id)}" ${rawChecked}>
-            <span>Use raw input</span>
-          </label>
-          <button class="ghost-button" type="button" data-action="search-current" data-slot-id="${escapeHtml(slot.id)}">Focus current target</button>
+        <div class="input-support">
+          ${renderPill(isDirty(slot.id) ? "Bản nháp khác DB" : "Bản nháp khớp DB", isDirty(slot.id) ? "pending" : "ok")}
+          ${renderPill(state.rawMode[slot.id] ? "Nhập route thủ công" : "Chọn có hỗ trợ danh mục")}
+          ${!state.catalog.ok ? renderPill("Không thể duyệt gợi ý", "pending") : ""}
         </div>
-      </div>
 
-      <div class="slot-suggestions">
-        ${renderSuggestionGroups(slot.id, currentValue)}
-      </div>
-    </article>
+        <div class="toolbar-row">
+          <button class="ghost-button" type="button" data-action="reset-slot" data-slot-id="${escapeHtml(slot.id)}">Khôi phục về DB</button>
+          <button class="ghost-button" type="button" data-action="default-slot" data-slot-id="${escapeHtml(slot.id)}">Gán route Claude mặc định</button>
+          <button class="ghost-button${favoriteCurrent ? " active" : ""}" type="button" data-action="toggle-favorite-current" data-slot-id="${escapeHtml(slot.id)}" ${currentValue ? "" : "disabled"}>
+            ${favoriteCurrent ? "Bỏ yêu thích hiện tại" : "Thêm hiện tại vào yêu thích"}
+          </button>
+        </div>
+      </section>
+    </div>
   `;
 }
 
+function renderQuickPresets() {
+  const slot = getSelectedSlot();
+  const filtered = getFilteredModels();
+  const selectedProviders = getSelectedProviders();
+
+  const controls = `
+    <div class="browser-controls">
+      <label class="field">
+        <span>Tìm trong danh mục trực tiếp</span>
+        <input id="catalogSearchInput" type="text" value="${escapeHtml(state.ui.search)}" placeholder="Tìm theo model id, root hoặc provider">
+      </label>
+
+      <div class="field">
+        <span>Chế độ xem</span>
+        <div class="segmented-control">
+          <button class="segmented-button${state.ui.catalogLens === "recommended" ? " active" : ""}" type="button" data-action="set-catalog-lens" data-lens="recommended">Đề xuất</button>
+          <button class="segmented-button${state.ui.catalogLens === "all-matches" ? " active" : ""}" type="button" data-action="set-catalog-lens" data-lens="all-matches">Tất cả kết quả</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <span>Phạm vi danh mục</span>
+        <div class="segmented-control">
+          <button class="segmented-button${!state.ui.showAll ? " active" : ""}" type="button" data-action="set-catalog-scope" data-scope="code-first">Ưu tiên code</button>
+          <button class="segmented-button${state.ui.showAll ? " active" : ""}" type="button" data-action="set-catalog-scope" data-scope="all">Toàn bộ danh mục</button>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>Sắp xếp kết quả</span>
+        <select id="catalogSortSelect">
+          <option value="recommended"${state.ui.sortMode === "recommended" ? " selected" : ""}>Đề xuất</option>
+          <option value="provider"${state.ui.sortMode === "provider" ? " selected" : ""}>Nhà cung cấp</option>
+          <option value="recent"${state.ui.sortMode === "recent" ? " selected" : ""}>Gần đây</option>
+        </select>
+      </label>
+
+      <div class="field">
+        <span>Nhà cung cấp</span>
+        <div class="filter-chip-row">
+          <button class="filter-chip${selectedProviders.length === getVisibleProviders().length || getVisibleProviders().length === 0 ? " active" : ""}" type="button" data-provider-chip="__all__">Tất cả</button>
+          ${getVisibleProviders().map((provider) => `
+            <button class="filter-chip${selectedProviders.includes(provider) ? " active" : ""}" type="button" data-provider-chip="${escapeHtml(provider)}">
+              ${escapeHtml(provider)}
+            </button>
+          `).join("")}
+        </div>
+      </div>
+    </div>
+  `;
+
+  let body = `
+    <article class="empty-card">
+      <p class="empty-state">Chọn một slot để duyệt các đích phù hợp.</p>
+    </article>
+  `;
+
+  if (slot) {
+    if (state.rawMode[slot.id]) {
+      body = `
+        <article class="empty-card">
+          ${renderBadge("Đang bật nhập tay", "pending")}
+          <p class="empty-state">Các thẻ gợi ý bị ẩn khi slot này ở chế độ nhập tay. Chuyển lại chế độ gợi ý để duyệt danh mục trực tiếp.</p>
+          <div class="toolbar-row">
+            <button class="ghost-button" type="button" data-action="set-raw-mode" data-slot-id="${escapeHtml(slot.id)}" data-mode="guided">Quay lại gợi ý</button>
+          </div>
+        </article>
+      `;
+    } else if (!state.catalog.ok) {
+      body = `
+        <article class="empty-card">
+          ${renderBadge("Danh mục suy giảm", "pending")}
+          <p class="empty-state">Danh mục model trực tiếp hiện không khả dụng. Bạn vẫn có thể sửa thủ công trường đích và áp dụng route nhập tay mà không mất mapping đã lưu.</p>
+        </article>
+      `;
+    } else {
+      const groups = getCatalogGroupsForSlot(slot.id);
+      body = groups.length === 0
+        ? `
+          <article class="empty-card">
+            ${renderBadge("Không có kết quả", "pending")}
+            <p class="empty-state">Không có đích nào khớp với bộ tìm kiếm và bộ lọc hiện tại. Hãy xóa tìm kiếm, mở rộng provider hoặc chuyển sang xem toàn bộ danh mục.</p>
+            <div class="toolbar-row">
+              <button class="ghost-button" type="button" data-action="clear-search">Xóa tìm kiếm</button>
+              <button class="ghost-button" type="button" data-action="set-catalog-scope" data-scope="all">Hiện toàn bộ danh mục</button>
+            </div>
+          </article>
+        `
+        : `
+          <div class="candidate-groups">
+            ${groups.map((group) => `
+              <section class="candidate-group">
+                <div class="candidate-group-head">
+                  <div class="candidate-group-copy">
+                    <h3 class="section-title">${escapeHtml(group.label)}</h3>
+                    <div class="helper">${escapeHtml(group.description || `${group.models.length} đích phù hợp.`)}</div>
+                  </div>
+                  ${renderBadge(`${group.models.length} đích`)}
+                </div>
+                <div class="candidate-grid">
+                  ${group.models.map((model) => renderCandidateCard(slot.id, model, getDraftAlias(slot.id), group.key)).join("")}
+                </div>
+              </section>
+            `).join("")}
+          </div>
+        `;
+    }
+  }
+
+  els.catalogBrowser.innerHTML = `
+    <div class="browser-shell">
+      <div class="browser-head">
+        <div>
+          <p class="eyebrow">Các đích phù hợp</p>
+          <h2 class="browser-title">Trình duyệt danh mục trực tiếp</h2>
+          <div class="browser-summary">
+            ${slot
+              ? `${filtered.length} kết quả hiển thị trong ${selectedProviders.length} nhà cung cấp cho ${slot.label}.`
+              : "Duyệt danh mục trực tiếp và đưa route vào bản nháp cho slot đang được chọn."}
+          </div>
+        </div>
+        <div class="status-row">
+          ${slot ? `<button class="tonal-button" type="button" data-action="open-model-picker" data-slot-id="${escapeHtml(slot.id)}">Chọn model</button>` : ""}
+          ${renderPill(state.catalog.ok ? "Danh mục hoạt động" : "Danh mục suy giảm", state.catalog.ok ? "ok" : "pending")}
+          ${slot ? renderPill(slot.label) : ""}
+        </div>
+      </div>
+      ${controls}
+      ${body}
+    </div>
+  `;
+}
+
+function renderAnalyticsPanel() {
+  const metrics = deriveMetrics();
+  const cards = [
+    { label: "Slot đã gán", value: String(metrics.mappedSlots) },
+    { label: "Route tùy chỉnh", value: String(metrics.customRouteCount) },
+    { label: "Chỉnh sửa chưa lưu", value: String(metrics.dirtyCount) },
+    { label: "Lần áp dụng cuối", value: titleCaseStatus(metrics.lastApplyStatus) },
+    { label: "Quy mô danh mục", value: `${metrics.liveCatalogCount} / ${metrics.codeFirstCatalogCount}` },
+    { label: "Yêu thích", value: String(metrics.favoriteCount) }
+  ];
+  const topTargets = getTopTargets();
+
+  return `
+    <section class="drawer-section">
+      <div class="drawer-section-head">
+        <div>
+          <p class="eyebrow">Vận hành bridge</p>
+          <h2 class="drawer-title">Thống kê trực tiếp</h2>
+        </div>
+      </div>
+      <div class="metric-grid">
+        ${cards.map((card) => `
+          <article class="metric-card">
+            <div class="metric-label">${escapeHtml(card.label)}</div>
+            <div class="metric-value">${escapeHtml(card.value)}</div>
+          </article>
+        `).join("")}
+      </div>
+    </section>
+    <section class="drawer-section">
+      <div class="drawer-section-head">
+        <div>
+          <p class="eyebrow">Đích dùng nhiều</p>
+          <h2 class="drawer-title">Các route nháp dùng nhiều nhất</h2>
+        </div>
+      </div>
+      <div class="target-list">
+        ${topTargets.length === 0
+          ? `<article class="empty-card"><p class="empty-state">Chưa có route nào đang được đưa vào bản nháp.</p></article>`
+          : topTargets.map((entry) => `
+            <article class="target-card">
+              <div class="history-title mono">${escapeHtml(entry.modelId)}</div>
+              <div class="activity-meta">Đang được dùng bởi ${entry.count} slot</div>
+            </article>
+          `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderMemoryPanel() {
+  return `
+    <section class="drawer-section">
+      <div class="drawer-section-head">
+        <div>
+          <p class="eyebrow">Yêu thích</p>
+          <h2 class="drawer-title">Các đích đã ghim</h2>
+        </div>
+      </div>
+      <div class="chip-list">
+        ${state.favorites.length === 0
+          ? `<div class="helper">Chưa có đích yêu thích nào.</div>`
+          : state.favorites.map((modelId) => `<button class="ghost-button" type="button" data-search-model="${escapeHtml(modelId)}">${escapeHtml(modelId)}</button>`).join("")}
+      </div>
+    </section>
+    <section class="drawer-section">
+      <div class="drawer-section-head">
+        <div>
+          <p class="eyebrow">Đích gần đây</p>
+          <h2 class="drawer-title">Gọi lại nhanh</h2>
+        </div>
+      </div>
+      <div class="chip-list">
+        ${state.recentTargets.length === 0
+          ? `<div class="helper">Chưa có đích gần đây nào.</div>`
+          : state.recentTargets.map((entry) => `<button class="ghost-button" type="button" data-search-model="${escapeHtml(entry.modelId)}">${escapeHtml(entry.modelId)}</button>`).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderActivityPanel() {
+  return `
+    <section class="drawer-section">
+      <div class="drawer-section-head">
+        <div>
+          <p class="eyebrow">Hoạt động</p>
+          <h2 class="drawer-title">Các lần ghi bridge gần đây</h2>
+        </div>
+      </div>
+      <div class="activity-list">
+        ${state.applyHistory.length === 0
+          ? `<article class="empty-card"><p class="empty-state">Trình duyệt này chưa ghi nhận lần ghi bridge nào.</p></article>`
+          : state.applyHistory.map((entry) => `
+            <article class="history-item">
+              <div class="history-head">
+                ${renderBadge(titleCaseStatus(entry.status), entry.status === "success" ? "ok" : entry.status === "validation-error" ? "pending" : "error")}
+                <div class="activity-meta">${escapeHtml(formatRelativeTime(entry.appliedAt))}</div>
+              </div>
+              <div class="history-title">${escapeHtml((entry.changedSlots || []).map(getSlotLabel).join(", ") || "Không có slot thay đổi")}</div>
+              <div class="activity-meta">${escapeHtml(entry.backupPath || entry.message || "Không có đường dẫn backup")}</div>
+            </article>
+          `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderProfileManager() {
+  syncSelectedProfileIds();
+  if (!state.ui.isUtilityDrawerOpen) {
+    els.utilityDrawer.classList.add("hidden");
+    els.utilityDrawer.innerHTML = "";
+    return;
+  }
+
+  const profiles = getSortedSavedProfiles();
+  const selectedCount = state.selectedProfileIds.length;
+  const panel = normalizeUtilityPanel(state.ui.activeUtilityPanel);
+  let content = "";
+
+  if (panel === "profiles") {
+    content = `
+      <section class="drawer-section">
+        <div class="drawer-section-head">
+          <div>
+            <p class="eyebrow">Thư viện profile</p>
+            <h2 class="drawer-title">Ảnh chụp bản nháp</h2>
+          </div>
+          ${renderBadge(`${profiles.length} đã lưu`)}
+        </div>
+
+        <div class="profile-toolbar">
+          <label class="field">
+            <span>Tên profile</span>
+            <input id="profileNameInput" type="text" value="${escapeHtml(state.ui.profileDraftName)}" placeholder="Lap trinh - GPT 5.3 Codex">
+          </label>
+          <button class="primary-button" type="button" data-action="save-current-profile" ${state.saving || state.slots.length === 0 ? "disabled" : ""}>Lưu bản nháp</button>
+        </div>
+
+        <div class="profile-actions">
+          <button class="ghost-button" type="button" data-action="export-profile" ${state.slots.length === 0 ? "disabled" : ""}>Xuất bản nháp hiện tại</button>
+          <button class="ghost-button" type="button" data-action="import-profile" ${state.slots.length === 0 ? "disabled" : ""}>Nhập JSON profile</button>
+          <button class="ghost-button" type="button" data-action="export-profile-set" ${profiles.length === 0 ? "disabled" : ""}>Xuất bộ profile</button>
+          <button class="ghost-button" type="button" data-action="import-profile-set">Nhập bộ profile</button>
+        </div>
+      </section>
+
+      <section class="drawer-section">
+        <div class="drawer-section-head">
+          <div>
+            <p class="eyebrow">Tải nhanh</p>
+            <h2 class="drawer-title">Preset hệ thống</h2>
+          </div>
+        </div>
+        <div class="preset-grid">
+          <button class="preset-card" type="button" data-system-profile="default">
+            <strong>Tải mặc định</strong>
+            <p>Đưa mọi slot về route Claude mặc định trước khi áp dụng.</p>
+          </button>
+          <button class="preset-card" type="button" data-system-profile="coding">
+            <strong>Tải lập trình</strong>
+            <p>Ưu tiên các slot thiên về code sang các route nghiêng về Codex và Opus.</p>
+          </button>
+          <button class="preset-card" type="button" data-system-profile="fast">
+            <strong>Tải nhanh</strong>
+            <p>Đưa các route nhanh vào bản nháp với mapping nghiêng về Haiku.</p>
+          </button>
+          ${QUICK_PRESETS.map((preset) => `
+            <button class="preset-card" type="button" data-preset-id="${escapeHtml(preset.id)}">
+              <strong>${escapeHtml(preset.title)}</strong>
+              <p>${escapeHtml(preset.description)}</p>
+            </button>
+          `).join("")}
+        </div>
+      </section>
+
+      <section class="drawer-section">
+        <div class="drawer-section-head">
+          <div>
+            <p class="eyebrow">Profile đã lưu</p>
+            <h2 class="drawer-title">Bản nháp có tên dùng lại</h2>
+          </div>
+          ${renderBadge(`${selectedCount} đã chọn`, selectedCount > 0 ? "pending" : "neutral")}
+        </div>
+
+        <div class="profile-actions">
+          <button class="ghost-button" type="button" data-action="select-all-profiles" ${profiles.length === 0 ? "disabled" : ""}>Chọn tất cả</button>
+          <button class="ghost-button" type="button" data-action="clear-selected-profiles" ${selectedCount === 0 ? "disabled" : ""}>Bỏ chọn</button>
+          <button class="ghost-button" type="button" data-action="bulk-pin-selected" ${selectedCount === 0 ? "disabled" : ""}>Ghim mục chọn</button>
+          <button class="ghost-button" type="button" data-action="bulk-unpin-selected" ${selectedCount === 0 ? "disabled" : ""}>Bỏ ghim mục chọn</button>
+        </div>
+
+        <div class="helper">${profiles.length === 0 ? "Chưa có profile đã lưu nào." : `Đã chọn ${selectedCount} trên tổng ${profiles.length} profile đã lưu.`}</div>
+
+        <div class="profile-grid">
+          ${profiles.length === 0
+            ? `<article class="empty-card"><p class="empty-state">Hãy lưu bản nháp hiện tại để tạo thư viện profile có thể dùng lại.</p></article>`
+            : profiles.map((profile) => {
+              const isRenaming = state.profileRename?.id === profile.id;
+              const stats = buildProfileStats(profile.mappings || {});
+              const selected = isProfileSelected(profile.id);
+              return `
+                <article class="profile-card${profile.pinned ? " pinned" : ""}${selected ? " selected" : ""}">
+                  <div class="profile-card-head">
+                    <div>
+                      <div class="history-title">${escapeHtml(profile.name)}</div>
+                      <div class="activity-meta">${escapeHtml(formatRelativeTime(profile.savedAt))}</div>
+                    </div>
+                    <div class="toolbar-row">
+                      <label class="profile-select-control">
+                        <input type="checkbox" data-action="toggle-select-profile" data-profile-id="${escapeHtml(profile.id)}" ${selected ? "checked" : ""}>
+                        <span>Chọn</span>
+                      </label>
+                      ${profile.pinned ? renderBadge("Đã ghim", "ok") : ""}
+                      ${profile.locked ? renderBadge("Đã khóa", "pending") : ""}
+                      ${renderBadge(getProfileSourceLabel(profile.source || "local"))}
+                    </div>
+                  </div>
+                  <div class="profile-badge-row">
+                    ${renderBadge(`Đã gán ${stats.mappedCount}`)}
+                    ${renderBadge(`Tùy chỉnh ${stats.customCount}`)}
+                    ${renderBadge(`Khác biệt ${stats.diffCount}`, stats.diffCount > 0 ? "pending" : "ok")}
+                  </div>
+                  <div class="helper">Đã lưu ${Object.keys(profile.mappings || {}).length} mapping slot.</div>
+                  ${isRenaming ? `
+                    <div class="profile-rename-row">
+                      <input type="text" value="${escapeHtml(state.profileRename?.name || profile.name)}" data-profile-rename-input="${escapeHtml(profile.id)}" placeholder="Tên profile">
+                      <button class="tonal-button" type="button" data-action="commit-rename-profile" data-profile-id="${escapeHtml(profile.id)}">Lưu</button>
+                      <button class="ghost-button" type="button" data-action="cancel-rename-profile">Hủy</button>
+                    </div>
+                  ` : `
+                    <div class="profile-card-actions">
+                      <button class="ghost-button" type="button" data-action="load-saved-profile" data-profile-id="${escapeHtml(profile.id)}">Tải</button>
+                      <button class="ghost-button" type="button" data-action="duplicate-saved-profile" data-profile-id="${escapeHtml(profile.id)}">Nhân bản</button>
+                      <button class="ghost-button" type="button" data-action="rename-saved-profile" data-profile-id="${escapeHtml(profile.id)}" ${profile.locked ? "disabled" : ""}>Đổi tên</button>
+                      <button class="ghost-button" type="button" data-action="toggle-pin-saved-profile" data-profile-id="${escapeHtml(profile.id)}">${profile.pinned ? "Bỏ ghim" : "Ghim"}</button>
+                      <button class="ghost-button" type="button" data-action="toggle-lock-saved-profile" data-profile-id="${escapeHtml(profile.id)}">${profile.locked ? "Mở khóa" : "Khóa"}</button>
+                      <button class="ghost-button" type="button" data-action="export-saved-profile" data-profile-id="${escapeHtml(profile.id)}">Xuất</button>
+                      <button class="ghost-button" type="button" data-action="delete-saved-profile" data-profile-id="${escapeHtml(profile.id)}" ${profile.locked ? "disabled" : ""}>Xóa</button>
+                    </div>
+                  `}
+                </article>
+              `;
+            }).join("")}
+        </div>
+      </section>
+    `;
+  } else if (panel === "analytics") {
+    content = renderAnalyticsPanel();
+  } else if (panel === "memory") {
+    content = renderMemoryPanel();
+  } else {
+    content = renderActivityPanel();
+  }
+
+  els.utilityDrawer.classList.remove("hidden");
+  els.utilityDrawer.innerHTML = `
+    <div class="drawer-backdrop" data-action="close-drawer"></div>
+    <aside class="drawer-shell glass-panel glass-primary">
+      <div class="drawer-header">
+        <div>
+          <p class="eyebrow">Ngăn công cụ</p>
+          <h2 class="drawer-title">${escapeHtml(getUtilityPanelLabel(panel))}</h2>
+        </div>
+        <button class="icon-button" type="button" data-action="close-drawer">Đóng</button>
+      </div>
+      <div class="drawer-tabs">
+        <button class="drawer-tab${panel === "profiles" ? " active" : ""}" type="button" data-action="set-utility-panel" data-panel="profiles">Profile</button>
+        <button class="drawer-tab${panel === "analytics" ? " active" : ""}" type="button" data-action="set-utility-panel" data-panel="analytics">Thống kê</button>
+        <button class="drawer-tab${panel === "memory" ? " active" : ""}" type="button" data-action="set-utility-panel" data-panel="memory">Ghi nhớ</button>
+        <button class="drawer-tab${panel === "activity" ? " active" : ""}" type="button" data-action="set-utility-panel" data-panel="activity">Hoạt động</button>
+      </div>
+      <div class="drawer-content">
+        ${content}
+      </div>
+    </aside>
+  `;
+}
+
+function renderAnalytics() {
+  return;
+}
+
+function renderMemorySections() {
+  return;
+}
+
+function renderApplyHistory() {
+  return;
+}
+
+function renderWorkspaceHeader() {
+  return;
+}
+
+function renderSuggestionGroups(slotId, currentValue) {
+  return "";
+}
+
+function renderSlotCard(slot) {
+  return "";
+}
+
 function renderSlots() {
-  els.slotList.innerHTML = state.slots.map(renderSlotCard).join("");
+  return;
 }
 
 function shouldShowStickyBar() {
@@ -1751,7 +2458,7 @@ function shouldShowStickyBar() {
 
 function renderStickyApplyBar() {
   if (!shouldShowStickyBar()) {
-    els.stickyApplyBar.innerHTML = "";
+    els.applyDock.innerHTML = "";
     return;
   }
 
@@ -1759,33 +2466,33 @@ function renderStickyApplyBar() {
   const tone = state.saving
     ? ""
     : state.stickyState?.status === "success"
-      ? "success"
-      : (state.stickyState?.status === "error" || state.stickyState?.status === "validation-error" ? "error" : "");
+      ? " tone-ok"
+      : (state.stickyState?.status === "error" || state.stickyState?.status === "validation-error" ? " tone-error" : "");
 
   const summary = state.saving
-    ? "Writing aliases into 9router and validating the DB state..."
+    ? "Đang ghi alias vào 9router và xác thực trạng thái DB..."
     : state.stickyState?.message
       ? state.stickyState.message
     : state.stickyState?.status === "success"
-      ? `Applied successfully. Backup created at ${state.stickyState.backupPath || "n/a"}.`
+      ? `Đã áp dụng thành công. Đã tạo bản sao lưu tại ${state.stickyState.backupPath || "không có"}.`
       : state.stickyState?.status === "validation-error"
-        ? `Validation mismatch detected for ${state.stickyState.mismatchCount || 0} slot(s).`
+        ? `Phát hiện lệch xác thực ở ${state.stickyState.mismatchCount || 0} slot.`
         : state.stickyState?.status === "error"
-          ? state.stickyState.message || "Bridge write failed."
-          : `${dirtySlots.length} unsaved change${dirtySlots.length === 1 ? "" : "s"} staged locally.`;
+          ? state.stickyState.message || "Ghi bridge thất bại."
+          : `Có ${dirtySlots.length} thay đổi chưa lưu đang được giữ cục bộ.`;
 
-  els.stickyApplyBar.innerHTML = `
-    <div class="sticky-bar ${tone}">
-      <div class="sticky-row">
-        <div class="sticky-copy">
+  els.applyDock.innerHTML = `
+    <div class="apply-dock${tone}">
+      <div class="dock-row">
+        <div class="dock-copy">
           <div class="history-title">${escapeHtml(summary)}</div>
           <div class="activity-meta">
-            ${dirtySlots.length > 0 ? escapeHtml(getVisibleDirtySlotLabels().join(", ")) : "If Claude Desktop does not react immediately, restart 9router manually."}
+            ${dirtySlots.length > 0 ? escapeHtml(getVisibleDirtySlotLabels().join(", ")) : "Nếu Claude Desktop chưa phản hồi ngay, hãy khởi động lại 9router thủ công."}
           </div>
         </div>
-        <div class="sticky-actions">
-          <button class="ghost-button" type="button" data-action="discard-all" ${state.saving || dirtySlots.length === 0 ? "disabled" : ""}>Discard local edits</button>
-          <button class="primary-button" type="button" data-action="apply-all" ${state.saving || dirtySlots.length === 0 ? "disabled" : ""}>Apply mapping</button>
+        <div class="dock-actions">
+          <button class="ghost-button" type="button" data-action="discard-all" ${state.saving || dirtySlots.length === 0 ? "disabled" : ""}>Bỏ thay đổi</button>
+          <button class="primary-button" type="button" data-action="apply-all" ${state.saving || dirtySlots.length === 0 ? "disabled" : ""}>Áp dụng mapping</button>
         </div>
       </div>
     </div>
@@ -1793,16 +2500,103 @@ function renderStickyApplyBar() {
 }
 
 function renderDegradedBanner() {
-  els.degradedBanner.classList.toggle("hidden", state.catalog.ok);
+  return;
 }
 
 function renderProfilePreviewModal() {
   const profilePreview = state.pendingProfilePreview;
   const setPreview = state.pendingProfileSetImport;
+  const modelPicker = state.pendingModelPicker;
 
-  if (!profilePreview && !setPreview) {
-    els.profilePreviewModal.classList.add("hidden");
-    els.profilePreviewModal.innerHTML = "";
+  if (!profilePreview && !setPreview && !modelPicker) {
+    els.modalLayer.classList.add("hidden");
+    els.modalLayer.innerHTML = "";
+    return;
+  }
+
+  if (modelPicker) {
+    const slot = getSlotById(modelPicker.slotId);
+    const currentValue = slot ? getDraftAlias(slot.id) : "";
+    const groups = slot ? getModelPickerGroups(slot.id) : [];
+
+    els.modalLayer.classList.remove("hidden");
+    els.modalLayer.innerHTML = `
+      <div class="modal-backdrop" data-action="close-model-picker"></div>
+      <section class="modal-panel glass-panel glass-primary model-picker-window">
+        <div class="model-picker-head">
+          <div class="model-picker-titlebar">
+            <div class="window-dots" aria-hidden="true">
+              <span class="window-dot dot-close"></span>
+              <span class="window-dot dot-min"></span>
+              <span class="window-dot dot-max"></span>
+            </div>
+            <div>
+              <p class="eyebrow">Bộ chọn model</p>
+              <h2 class="drawer-title">${escapeHtml(slot ? `Chọn model cho ${slot.label}` : "Chọn model")}</h2>
+            </div>
+          </div>
+          <button class="icon-button model-picker-close" type="button" data-action="close-model-picker">Đóng</button>
+        </div>
+
+        <div class="model-picker-toolbar">
+          <label class="field">
+            <span>Tìm model</span>
+            <input id="modelPickerSearchInput" type="text" value="${escapeHtml(state.ui.search)}" placeholder="Tìm theo model id, root hoặc provider">
+          </label>
+
+          <div class="model-picker-status-row">
+            <div class="segmented-control">
+              <button class="segmented-button${!state.ui.showAll ? " active" : ""}" type="button" data-action="set-catalog-scope" data-scope="code-first">Ưu tiên code</button>
+              <button class="segmented-button${state.ui.showAll ? " active" : ""}" type="button" data-action="set-catalog-scope" data-scope="all">Toàn bộ danh mục</button>
+            </div>
+            ${slot ? renderPill(slot.label, "neutral") : ""}
+            ${currentValue ? renderPill(truncateMiddle(currentValue, 36)) : ""}
+          </div>
+
+          <div class="filter-chip-row">
+            <button class="filter-chip${getSelectedProviders().length === getVisibleProviders().length || getVisibleProviders().length === 0 ? " active" : ""}" type="button" data-provider-chip="__all__">Tất cả provider</button>
+            ${getVisibleProviders().map((provider) => `
+              <button class="filter-chip${getSelectedProviders().includes(provider) ? " active" : ""}" type="button" data-provider-chip="${escapeHtml(provider)}">
+                ${escapeHtml(provider)}
+              </button>
+            `).join("")}
+          </div>
+        </div>
+
+        ${!slot ? `
+          <article class="empty-card model-picker-empty">
+            <p class="empty-state">Không tìm thấy slot để mở bộ chọn model.</p>
+          </article>
+        ` : !state.catalog.ok ? `
+          <article class="empty-card model-picker-empty">
+            ${renderBadge("Danh mục suy giảm", "pending")}
+            <p class="empty-state">Danh mục trực tiếp hiện chưa khả dụng. Hãy nhập model thủ công hoặc thử tải lại sau.</p>
+          </article>
+        ` : groups.length === 0 ? `
+          <article class="empty-card model-picker-empty">
+            ${renderBadge("Không có kết quả", "pending")}
+            <p class="empty-state">Không có model nào khớp với bộ lọc hiện tại. Hãy xóa tìm kiếm hoặc mở rộng phạm vi danh mục.</p>
+          </article>
+        ` : `
+          <div class="model-picker-scroll">
+            ${groups.map((group) => `
+              <section class="model-picker-group">
+                <div class="model-picker-group-head">
+                  <div>
+                    <div class="history-title">${escapeHtml(group.label)}</div>
+                    <div class="helper">${escapeHtml(group.description)}</div>
+                  </div>
+                  ${renderBadge(`${group.models.length} model`)}
+                </div>
+                <div class="model-picker-chip-grid">
+                  ${group.models.map((model) => renderModelPickerChip(slot.id, model, currentValue)).join("")}
+                </div>
+              </section>
+            `).join("")}
+          </div>
+        `}
+      </section>
+    `;
     return;
   }
 
@@ -1810,43 +2604,43 @@ function renderProfilePreviewModal() {
     const plan = buildProfileSetImportPlan(setPreview.mode, setPreview.importedProfiles);
     const summary = plan.summary;
 
-    els.profilePreviewModal.classList.remove("hidden");
-    els.profilePreviewModal.innerHTML = `
-      <div class="preview-backdrop" data-action="close-profile-set-preview"></div>
-      <section class="preview-panel panel">
-        <div class="section-head">
+    els.modalLayer.classList.remove("hidden");
+    els.modalLayer.innerHTML = `
+      <div class="modal-backdrop" data-action="close-profile-set-preview"></div>
+      <section class="modal-panel glass-panel glass-primary">
+        <div class="drawer-header">
           <div>
-            <p class="eyebrow">Profile Set Import Preview</p>
-            <h2>${summary.importedCount} incoming profiles</h2>
+            <p class="eyebrow">Xem trước nhập bộ profile</p>
+            <h2 class="drawer-title">${summary.importedCount} profile sắp nhập</h2>
           </div>
-          <span class="badge">${escapeHtml(plan.mode)}</span>
+          ${renderBadge(getImportModeLabel(plan.mode))}
         </div>
-        <div class="mode-toggle preview-mode-toggle">
-          <button class="segmented-button ${plan.mode === "merge" ? "active" : ""}" type="button" data-action="set-import-mode" data-mode="merge">Merge</button>
-          <button class="segmented-button ${plan.mode === "replace" ? "active" : ""}" type="button" data-action="set-import-mode" data-mode="replace">Replace</button>
-          <button class="segmented-button ${plan.mode === "skip-locked" ? "active" : ""}" type="button" data-action="set-import-mode" data-mode="skip-locked">Skip locked</button>
+        <div class="segmented-control">
+          <button class="segmented-button${plan.mode === "merge" ? " active" : ""}" type="button" data-action="set-import-mode" data-mode="merge">Gộp</button>
+          <button class="segmented-button${plan.mode === "replace" ? " active" : ""}" type="button" data-action="set-import-mode" data-mode="replace">Thay thế</button>
+          <button class="segmented-button${plan.mode === "skip-locked" ? " active" : ""}" type="button" data-action="set-import-mode" data-mode="skip-locked">Bỏ qua đã khóa</button>
         </div>
-        <div class="profile-badge-row">
-          <span class="badge ok">Create ${summary.created}</span>
-          <span class="badge">Update ${summary.updated}</span>
-          <span class="badge pending">Skipped locked ${summary.skippedLocked}</span>
-          <span class="badge error">Dropped ${summary.droppedByLimit}</span>
-          <span class="badge">Final ${summary.finalCount}</span>
+        <div class="profile-badge-row" style="margin-top: 16px;">
+          ${renderBadge(`Tạo ${summary.created}`, "ok")}
+          ${renderBadge(`Cập nhật ${summary.updated}`)}
+          ${renderBadge(`Bỏ qua khóa ${summary.skippedLocked}`, "pending")}
+          ${renderBadge(`Loại ${summary.droppedByLimit}`, "error")}
+          ${renderBadge(`Sau cùng ${summary.finalCount}`)}
         </div>
         <div class="preview-diff-list">
-          ${plan.operations.length === 0 ? `<div class="empty-state">No profile operations to apply.</div>` : plan.operations.map((operation) => `
+          ${plan.operations.length === 0 ? `<article class="empty-card"><p class="empty-state">Không có thao tác profile nào để áp dụng.</p></article>` : plan.operations.map((operation) => `
             <article class="preview-diff-item">
               <div class="profile-card-head">
                 <div class="history-title">${escapeHtml(operation.name)}</div>
-                <span class="badge ${operation.type === "create" ? "ok" : operation.type === "skip-locked" ? "pending" : ""}">${escapeHtml(operation.type)}</span>
+                ${renderBadge(getProfileOperationLabel(operation.type), operation.type === "create" ? "ok" : operation.type === "skip-locked" ? "pending" : "neutral")}
               </div>
               <div class="helper">${escapeHtml(operation.detail)}</div>
             </article>
           `).join("")}
         </div>
-        <div class="profile-card-actions">
-          <button class="ghost-button" type="button" data-action="close-profile-set-preview">Cancel</button>
-          <button class="primary-button" type="button" data-action="confirm-profile-set-import">Apply import</button>
+        <div class="modal-actions">
+          <button class="ghost-button" type="button" data-action="close-profile-set-preview">Hủy</button>
+          <button class="primary-button" type="button" data-action="confirm-profile-set-import">Áp dụng nhập</button>
         </div>
       </section>
     `;
@@ -1854,26 +2648,26 @@ function renderProfilePreviewModal() {
   }
 
   const preview = profilePreview;
-  els.profilePreviewModal.classList.remove("hidden");
+  els.modalLayer.classList.remove("hidden");
   const diffRows = preview.diffRows || [];
-  els.profilePreviewModal.innerHTML = `
-    <div class="preview-backdrop" data-action="close-profile-preview"></div>
-    <section class="preview-panel panel">
-      <div class="section-head">
+  els.modalLayer.innerHTML = `
+    <div class="modal-backdrop" data-action="close-profile-preview"></div>
+    <section class="modal-panel glass-panel glass-primary">
+      <div class="drawer-header">
         <div>
-          <p class="eyebrow">Profile Preview</p>
-          <h2>${escapeHtml(preview.profileName)}</h2>
+          <p class="eyebrow">Xem trước profile</p>
+          <h2 class="drawer-title">${escapeHtml(preview.profileName)}</h2>
         </div>
-        <span class="badge">${escapeHtml(preview.sourceType)}</span>
+        ${renderBadge(getProfileSourceLabel(preview.sourceType))}
       </div>
       <div class="helper">
         ${diffRows.length === 0
-          ? "No changes compared with current draft."
-          : `${diffRows.length} slot change${diffRows.length === 1 ? "" : "s"} will be staged if you continue.`}
+          ? "Không có thay đổi nào so với bản nháp hiện tại."
+          : `Nếu tiếp tục, sẽ đưa ${diffRows.length} thay đổi slot vào bản nháp.`}
       </div>
       <div class="preview-diff-list">
         ${diffRows.length === 0
-          ? `<div class="empty-state">Current draft already matches this profile.</div>`
+          ? `<article class="empty-card"><p class="empty-state">Bản nháp hiện tại đã khớp với profile này.</p></article>`
           : diffRows.map((row) => `
             <article class="preview-diff-item">
               <div class="history-title">${escapeHtml(row.slotLabel)}</div>
@@ -1885,9 +2679,9 @@ function renderProfilePreviewModal() {
             </article>
           `).join("")}
       </div>
-      <div class="profile-card-actions">
-        <button class="ghost-button" type="button" data-action="close-profile-preview">Cancel</button>
-        <button class="primary-button" type="button" data-action="confirm-profile-preview">Stage profile</button>
+      <div class="modal-actions">
+        <button class="ghost-button" type="button" data-action="close-profile-preview">Hủy</button>
+        <button class="primary-button" type="button" data-action="confirm-profile-preview">Đưa vào bản nháp</button>
       </div>
     </section>
   `;
@@ -1895,56 +2689,33 @@ function renderProfilePreviewModal() {
 
 function renderAll() {
   syncSelectedProviders();
+  ensureSelectedSlot();
   renderHero();
   renderSystemHealth();
   renderProviderFilters();
   renderQuickPresets();
   renderProfileManager();
-  renderAnalytics();
-  renderMemorySections();
-  renderApplyHistory();
-  renderWorkspaceHeader();
-  renderDegradedBanner();
-  renderSlots();
   renderStickyApplyBar();
   renderProfilePreviewModal();
 }
 
 function patchSlotCardVisual(slotId) {
-  const card = els.slotList.querySelector(`[data-slot-id="${CSS.escape(slotId)}"]`);
-  if (!card) {
-    return;
+  const active = document.activeElement;
+  const shouldPreserve = active && active.matches("[data-slot-input]") && active.dataset.slotInput === slotId;
+  const start = shouldPreserve ? active.selectionStart : null;
+  const end = shouldPreserve ? active.selectionEnd : null;
+
+  renderAll();
+
+  if (shouldPreserve) {
+    const next = document.querySelector(`[data-slot-input="${CSS.escape(slotId)}"]`);
+    if (next) {
+      next.focus();
+      if (typeof next.setSelectionRange === "function" && start !== null && end !== null) {
+        next.setSelectionRange(start, end);
+      }
+    }
   }
-
-  const status = getSlotStatus(slotId);
-  card.classList.remove("state-dirty", "state-custom", "state-default", "state-error");
-  card.classList.add(status.className);
-
-  const badge = card.querySelector(".state-badge");
-  if (badge) {
-    badge.className = `state-badge ${status.badgeTone}`.trim();
-    badge.textContent = status.label;
-  }
-
-  const metrics = card.querySelector(".slot-metrics");
-  if (metrics) {
-    metrics.innerHTML = `
-      <span class="badge ${isDirty(slotId) ? "pending" : "ok"}">${isDirty(slotId) ? "Draft diverges from DB" : "Draft matches DB"}</span>
-      <span class="badge">${escapeHtml(state.rawMode[slotId] ? "Raw input" : "Guided")}</span>
-    `;
-  }
-
-  const favoriteButton = card.querySelector('[data-action="toggle-favorite-current"]');
-  if (favoriteButton) {
-    const currentValue = getDraftAlias(slotId);
-    favoriteButton.classList.toggle("active", isFavorite(currentValue));
-    favoriteButton.textContent = isFavorite(currentValue) ? "Unfavorite current" : "Favorite current";
-  }
-
-  renderHero();
-  renderAnalytics();
-  renderWorkspaceHeader();
-  renderStickyApplyBar();
 }
 
 async function loadHealth() {
@@ -1961,13 +2732,14 @@ async function loadBridgeState() {
   const response = await fetch("/api/bridge/state");
   const payload = await response.json();
   if (!response.ok) {
-    throw new Error(payload.error || "Cannot load bridge state");
+    throw new Error(payload.error || "Không thể tải trạng thái bridge");
   }
 
   state.slots = Array.isArray(payload.slots) ? payload.slots : [];
   state.persistedAliases = { ...(payload.bridge?.aliases || {}) };
   state.draftAliases = { ...state.persistedAliases };
   state.rawMode = Object.fromEntries(state.slots.map((slot) => [slot.id, Boolean(state.rawMode[slot.id])]));
+  ensureSelectedSlot();
 }
 
 async function reloadAll() {
@@ -1977,15 +2749,11 @@ async function reloadAll() {
   if (rejection) {
     state.lastApplyResult = {
       status: "error",
-      message: rejection.reason?.message || "Bootstrap failed",
+      message: rejection.reason?.message || "Khởi tạo ứng dụng thất bại",
       appliedAt: new Date().toISOString(),
       mismatches: [],
       mismatchCount: 0
     };
-  }
-
-  if (els.searchInput) {
-    els.searchInput.value = state.ui.search;
   }
 
   persistStoredState();
@@ -1999,12 +2767,13 @@ async function applyMappings() {
     if (!value) {
       setLastApplyResult({
         status: "error",
-        message: `Target model cannot be empty for slot: ${slot.id}`,
+        message: `Model đích không được để trống cho slot: ${slot.id}`,
         appliedAt: new Date().toISOString(),
         mismatches: [],
         mismatchCount: 0,
         hideAt: Date.now() + STICKY_SUCCESS_MS
       });
+      renderAll();
       return;
     }
     mappings[slot.id] = value;
@@ -2012,8 +2781,7 @@ async function applyMappings() {
 
   const changedSlots = getDirtySlots().map((slot) => slot.id);
   state.saving = true;
-  renderHero();
-  renderStickyApplyBar();
+  renderAll();
 
   try {
     const response = await fetch("/api/bridge/state", {
@@ -2024,7 +2792,7 @@ async function applyMappings() {
     const payload = await response.json();
 
     if (!response.ok) {
-      throw new Error(payload.error || "Bridge write failed");
+      throw new Error(payload.error || "Ghi bridge thất bại");
     }
 
     state.persistedAliases = { ...(payload.bridge?.aliases || {}) };
@@ -2047,12 +2815,12 @@ async function applyMappings() {
       appliedAt: result.appliedAt,
       changedSlots,
       backupPath: result.backupPath,
-      message: status === "success" ? "Validation ok" : "Validation mismatch"
+      message: status === "success" ? "Xác thực thành công" : "Lệch xác thực"
     });
   } catch (error) {
     const result = {
       status: "error",
-      message: error.message || "Bridge write failed",
+      message: error.message || "Ghi bridge thất bại",
       appliedAt: new Date().toISOString(),
       mismatches: [],
       mismatchCount: 0,
@@ -2123,6 +2891,37 @@ function handleClick(event) {
   const action = target.dataset.action;
   const slotId = target.dataset.slotId;
 
+  if (action === "reload-all") {
+    reloadAll();
+    return;
+  }
+
+  if (action === "toggle-utility-panel") {
+    toggleUtilityPanel(target.dataset.panel || "profiles");
+    return;
+  }
+
+  if (action === "set-utility-panel") {
+    openUtilityPanel(target.dataset.panel || "profiles");
+    return;
+  }
+
+  if (action === "close-drawer") {
+    closeUtilityDrawer();
+    return;
+  }
+
+  if (action === "select-slot") {
+    selectSlot(slotId);
+    return;
+  }
+
+  if (action === "close-model-picker") {
+    closeModelPicker();
+    renderAll();
+    return;
+  }
+
   if (action === "close-profile-preview") {
     closeProfilePreview();
     renderAll();
@@ -2153,7 +2952,15 @@ function handleClick(event) {
 
   if (action === "pick-model") {
     state.draftAliases[slotId] = target.dataset.modelId || "";
+    state.rawMode[slotId] = false;
     touchRecentTarget(state.draftAliases[slotId]);
+    closeModelPicker();
+    renderAll();
+    return;
+  }
+
+  if (action === "toggle-favorite-model") {
+    toggleFavorite(target.dataset.modelId || "");
     renderAll();
     return;
   }
@@ -2170,14 +2977,40 @@ function handleClick(event) {
     return;
   }
 
+  if (action === "set-raw-mode") {
+    state.rawMode[slotId] = target.dataset.mode === "raw";
+    renderAll();
+    return;
+  }
+
   if (action === "toggle-favorite-current") {
     toggleFavorite(getDraftAlias(slotId));
     renderAll();
     return;
   }
 
-  if (action === "search-current") {
-    setSearchFromModel(getDraftAlias(slotId));
+  if (action === "open-model-picker") {
+    openModelPicker(slotId, { seedFromCurrent: Boolean(getDraftAlias(slotId)) });
+    return;
+  }
+
+  if (action === "set-catalog-lens") {
+    state.ui.catalogLens = target.dataset.lens === "all-matches" ? "all-matches" : "recommended";
+    persistStoredState();
+    renderAll();
+    return;
+  }
+
+  if (action === "set-catalog-scope") {
+    state.ui.showAll = target.dataset.scope === "all";
+    persistStoredState();
+    renderAll();
+    return;
+  }
+
+  if (action === "clear-search") {
+    state.ui.search = "";
+    renderAll();
     return;
   }
 
@@ -2188,6 +3021,21 @@ function handleClick(event) {
 
   if (action === "discard-all") {
     discardAllEdits();
+    return;
+  }
+
+  if (action === "save-current-profile") {
+    saveCurrentProfile();
+    return;
+  }
+
+  if (action === "export-profile") {
+    exportProfile();
+    return;
+  }
+
+  if (action === "import-profile") {
+    openProfileFilePicker("single-mapping");
     return;
   }
 
@@ -2269,13 +3117,40 @@ function handleClick(event) {
 }
 
 function handleInput(event) {
-  if (event.target === els.searchInput) {
-    state.ui.search = els.searchInput.value;
-    renderAll();
+  if (event.target.id === "catalogSearchInput") {
+    const active = event.target;
+    const start = active.selectionStart;
+    const end = active.selectionEnd;
+    state.ui.search = active.value;
+    renderQuickPresets();
+    const next = document.getElementById("catalogSearchInput");
+    if (next) {
+      next.focus();
+      if (typeof next.setSelectionRange === "function" && start !== null && end !== null) {
+        next.setSelectionRange(start, end);
+      }
+    }
     return;
   }
 
-  if (event.target === els.profileNameInput) {
+  if (event.target.id === "modelPickerSearchInput") {
+    const active = event.target;
+    const start = active.selectionStart;
+    const end = active.selectionEnd;
+    state.ui.search = active.value;
+    renderAll();
+    const next = document.getElementById("modelPickerSearchInput");
+    if (next) {
+      next.focus();
+      if (typeof next.setSelectionRange === "function" && start !== null && end !== null) {
+        next.setSelectionRange(start, end);
+      }
+    }
+    return;
+  }
+
+  if (event.target.id === "profileNameInput") {
+    state.ui.profileDraftName = event.target.value;
     return;
   }
 
@@ -2295,10 +3170,22 @@ function handleInput(event) {
 }
 
 function handleKeydown(event) {
-  if ((state.pendingProfilePreview || state.pendingProfileSetImport) && event.key === "Escape") {
+  if ((state.pendingProfilePreview || state.pendingProfileSetImport || state.pendingModelPicker) && event.key === "Escape") {
     closeProfilePreview();
     closeProfileSetImportPreview();
+    closeModelPicker();
     renderAll();
+    return;
+  }
+
+  if (state.ui.isUtilityDrawerOpen && event.key === "Escape") {
+    closeUtilityDrawer();
+    return;
+  }
+
+  if (event.target.id === "profileNameInput" && event.key === "Enter") {
+    event.preventDefault();
+    saveCurrentProfile();
     return;
   }
 
@@ -2320,22 +3207,8 @@ function handleKeydown(event) {
 }
 
 function handleChange(event) {
-  if (event.target === els.sortSelect) {
-    state.ui.sortMode = els.sortSelect.value || "provider";
-    persistStoredState();
-    renderAll();
-    return;
-  }
-
-  if (event.target === els.modeCodeFirst) {
-    state.ui.showAll = false;
-    persistStoredState();
-    renderAll();
-    return;
-  }
-
-  if (event.target === els.modeShowAll) {
-    state.ui.showAll = true;
+  if (event.target.id === "catalogSortSelect") {
+    state.ui.sortMode = event.target.value || "recommended";
     persistStoredState();
     renderAll();
     return;
@@ -2354,54 +3227,10 @@ function handleChange(event) {
     return;
   }
 
-  if (event.target.matches('[data-action="toggle-raw"]')) {
-    const slotId = event.target.dataset.slotId;
-    state.rawMode[slotId] = event.target.checked;
-    renderAll();
-  }
 }
 
 function wireStaticEvents() {
-  els.reloadButton.addEventListener("click", () => {
-    reloadAll();
-  });
-
-  els.saveButton.addEventListener("click", () => {
-    applyMappings();
-  });
-
-  els.exportProfileButton.addEventListener("click", () => {
-    exportProfile();
-  });
-
-  els.importProfileButton.addEventListener("click", () => {
-    openProfileFilePicker("single-mapping");
-  });
-
-  els.opsExportProfileButton.addEventListener("click", () => {
-    exportProfile();
-  });
-
-  els.opsImportProfileButton.addEventListener("click", () => {
-    openProfileFilePicker("single-mapping");
-  });
-
   els.profileFileInput.addEventListener("change", handleProfileFile);
-  els.saveProfileButton.addEventListener("click", () => {
-    saveCurrentProfile();
-  });
-
-  els.modeCodeFirst.addEventListener("click", () => {
-    state.ui.showAll = false;
-    persistStoredState();
-    renderAll();
-  });
-  els.modeShowAll.addEventListener("click", () => {
-    state.ui.showAll = true;
-    persistStoredState();
-    renderAll();
-  });
-
   document.addEventListener("click", handleClick);
   document.addEventListener("input", handleInput);
   document.addEventListener("change", handleChange);
@@ -2410,7 +3239,6 @@ function wireStaticEvents() {
 
 async function init() {
   hydrateStoredState();
-  els.searchInput.value = state.ui.search;
   wireStaticEvents();
   renderAll();
   await reloadAll();

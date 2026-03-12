@@ -16,6 +16,64 @@ Local bridge console for `Claude Desktop -> 9router`.
 - Supports per-profile diff detail badges, duplicate profile, and lock protection
 - Supports bulk profile actions: multi-select pin/unpin and profile-set export/import
 
+## Related specs
+
+- See `COWORK_INTEGRATION_SPEC.md` for the planned Cowork bridge architecture and go/no-go decision gates.
+
+## Cowork bridge
+
+Chrono Spirit now exposes a second local bridge for Cowork on `http://localhost:8000` by default.
+
+- It serves a minimal local OAuth flow for the hidden `OAUTH_ENVIRONMENT=local` mode.
+- It proxies Cowork ` /v1/* ` traffic to your configured `NINE_ROUTER_BASE_URL`.
+- If `NINE_ROUTER_API_KEY` is set, the Cowork bridge rewrites outbound `Authorization` to that router key.
+- Bridge state is visible at `GET /api/cowork/bridge`.
+
+To launch Claude Desktop in the local Cowork OAuth mode after starting Chrono Spirit:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\launch-claude-cowork-local.ps1 -KillExistingClaude
+```
+
+This script sets:
+
+- `CLAUDE_AI_URL=https://claude-ai.staging.ant.dev`
+- `OAUTH_ENVIRONMENT=local`
+- `ANTHROPIC_BASE_URL=http://localhost:8000`
+
+This hidden OAuth path remains available as a legacy experiment, but the supported Cowork routing path is now the production-host MITM bridge below.
+
+## Cowork MITM
+
+Chrono Spirit can now intercept Cowork production API traffic for `api.anthropic.com` and `a-api.anthropic.com`, then route inference calls to `9router` while leaving OAuth/profile passthrough on Anthropic.
+
+- `Lane A`
+  Per-user PAC + local HTTP CONNECT proxy on `127.0.0.1`
+- `Lane B`
+  Hosts-file redirect fallback for the same API hosts
+- Diagnostics
+  `GET /api/cowork/mitm/status`, `GET /api/cowork/mitm/recent`, `GET /api/cowork/mitm/config`
+
+Install and enable on Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-cowork-mitm.ps1
+$env:COWORK_MITM_ENABLED = "1"
+npm start
+```
+
+If Cowork still does not hit the proxy lane, switch to transparent fallback:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\switch-cowork-mitm-lane.ps1 -Mode transparent
+```
+
+Inspect live status:
+
+```powershell
+Invoke-RestMethod http://localhost:4311/api/cowork/mitm/status | ConvertTo-Json -Depth 8
+```
+
 ## UI model
 
 Chrono Spirit is now a two-pane dark control room:
@@ -141,6 +199,32 @@ This starts a temporary mock catalog server, boots Chrono Spirit against a temp 
   Default on Windows: `%APPDATA%\\9router\\db.json`
 - `NINE_ROUTER_API_KEY`
   Optional. Only needed if your local `9router` protects `/v1/models`.
+- `COWORK_BRIDGE_ENABLED`
+  Default: enabled. Set `0` or `false` to disable the local Cowork bridge.
+- `COWORK_BRIDGE_HOST`
+  Default: `127.0.0.1`
+- `COWORK_BRIDGE_PORT`
+  Default: `8000`
+- `COWORK_BRIDGE_FAKE_TOKEN`
+  Optional. Override the fake local OAuth token prefix used by the Cowork bridge.
+- `COWORK_MITM_ENABLED`
+  Default: `0`
+- `COWORK_MITM_MODE`
+  Default: `system-proxy`
+- `COWORK_MITM_PROXY_HOST`
+  Default: `127.0.0.1`
+- `COWORK_MITM_PROXY_PORT`
+  Default: `8877`
+- `COWORK_MITM_TLS_PORT`
+  Default: `443`
+- `COWORK_MITM_TARGET_HOSTS`
+  Default: `api.anthropic.com,a-api.anthropic.com`
+- `COWORK_MITM_CA_DIR`
+  Default on Windows: `%LOCALAPPDATA%\\ChronoSpirit\\cowork-mitm`
+- `COWORK_MITM_LOG_BODY_BYTES`
+  Default: `2048`
+- `COWORK_MITM_UPSTREAM_TIMEOUT_MS`
+  Default: `45000`
 
 ## API
 
@@ -152,6 +236,14 @@ This starts a temporary mock catalog server, boots Chrono Spirit against a temp 
   Returns the supported Claude Desktop slots and the current persisted aliases.
 - `POST /api/bridge/state`
   Applies mappings, creates a backup, then read-back validates the DB.
+- `GET /api/cowork/bridge`
+  Returns the local Cowork bridge status, recent requests, and startup errors if any.
+- `GET /api/cowork/mitm/status`
+  Returns Cowork MITM runtime status, install state, counters, and recent request summary.
+- `GET /api/cowork/mitm/recent`
+  Returns the recent MITM request list only.
+- `GET /api/cowork/mitm/config`
+  Returns the effective MITM config and last loaded install metadata.
 
 ## How it works
 
