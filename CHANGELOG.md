@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 - 2026-03-11
+## 0.1.0 - 2026-03-12
 
 Initial release.
 
@@ -15,6 +15,8 @@ Initial release.
 - Named profile manager with quick-load defaults
 - Profile diff preview, duplicate, rename, pin, lock, import, and export
 - Bulk profile-set import/export with preview and import modes
+- Cowork bridge mode for local Anthropic-compatible routing
+- Cowork MITM helpers, install scripts, and runtime diagnostics
 - Smoke test script for API/static/apply verification
 
 ### Notes

@@ -266,7 +266,10 @@ Example:
 
 - Run `npm run smoke`
 - Confirm the real local workflow still works with your live `9router`
+- Push the release commit to `main`
+- Create and push a tag like `v0.1.0` to trigger `.github/workflows/release.yml`
+- Review the generated GitHub Release notes and edit from `RELEASE_NOTES.md` if needed
 - Review `.gitignore` coverage for local artifacts before first push
 - Decide whether this repo should keep `"private": true` in `package.json`
 - Add a license file if the repo will be shared beyond private/internal use
-- Use `CHANGELOG.md` and `RELEASE_NOTES.md` as the starting point for the first repo push/release
+- Use `CHANGELOG.md` and `RELEASE_NOTES.md` as the starting point for release summaries

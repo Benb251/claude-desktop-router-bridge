@@ -15,7 +15,7 @@ Local bridge console for routing Claude Desktop slots into live 9router models.
 
 ## Suggested First Release Title
 
-`v0.1.0 - Initial bridge console`
+`v0.1.0 - Initial bridge console + Cowork bridge`
 
 ## Suggested First Release Body
 
@@ -31,6 +31,8 @@ This first release includes:
 - favorites, recents, and local apply history
 - named profiles with preview diff, duplicate, pin, lock, import, and export
 - bulk profile-set import/export with preview modes
+- a local Cowork bridge mode for Anthropic-compatible requests
+- Cowork MITM utilities, install helpers, and request diagnostics
 - a smoke test script for local pre-release verification
 
 Known limits:
